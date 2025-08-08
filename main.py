@@ -82,7 +82,7 @@ bot = commands.Bot(
     intents=intents,
     activity=discord.Activity(
         type=discord.ActivityType.watching,
-        name="transmissões na Twitch"
+        name="Exterminador do Futuro 2"
     )
 )
 
