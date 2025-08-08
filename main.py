@@ -244,9 +244,9 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
     
     discord_id = ui.TextInput(
         label="ID do Membro do Discord",
-        placeholder="Digite o ID do usuário ou mencione (@usuário)",
-        min_length=3,  # Mínimo reduzido para aceitar menções
-        max_length=32  # Máximo suficiente para menções
+        placeholder="Digite o ID (18 dígitos) ou mencione (@usuário)",
+        min_length=3,
+        max_length=32
     )
 
     async def on_submit(self, interaction: discord.Interaction):
@@ -263,10 +263,13 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
             twitch_username = self.twitch_name.value.lower().strip()
             discord_input = self.discord_id.value.strip()
             
+            # Debug (opcional - pode remover depois)
+            logger.debug(f"Input recebido - Twitch: {twitch_username} | Discord: {discord_input}")
+            
             # Validação do nome Twitch
             if not re.match(r'^[a-zA-Z0-9_]{3,25}$', twitch_username):
                 await interaction.response.send_message(
-                    "❌ Nome de usuário da Twitch inválido! Use apenas letras, números e underscores.",
+                    "❌ Nome de usuário inválido! Use apenas letras, números e underscores.",
                     ephemeral=True
                 )
                 return
@@ -274,28 +277,36 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
             # Verifica se o streamer existe na Twitch
             if not await twitch_api.validate_streamer(twitch_username):
                 await interaction.response.send_message(
-                    f"❌ Não foi possível encontrar o usuário `{twitch_username}` na Twitch!",
+                    f"❌ Não foi possível encontrar '{twitch_username}' na Twitch!",
                     ephemeral=True
                 )
                 return
 
-            # Extrai o ID independentemente do formato (menção ou ID direto)
+            # EXTRAÇÃO E VALIDAÇÃO DO ID DISCORD (PARTE CRÍTICA)
             discord_id = None
-            if discord_input.startswith('<@') and discord_input.endswith('>'):  # É uma menção
+            
+            # Caso 1: É uma menção (@usuário)
+            if discord_input.startswith('<@') and discord_input.endswith('>'):
                 discord_id = ''.join(c for c in discord_input if c.isdigit())
-            elif discord_input.isdigit():  # É um ID direto
+                # Remove o '!' que pode aparecer em algumas menções
+                discord_id = discord_id.replace('!', '')
+                
+            # Caso 2: É um ID numérico
+            elif discord_input.isdigit():
                 discord_id = discord_input
+                
+            # Caso 3: Formato inválido
             else:
                 await interaction.response.send_message(
-                    "❌ Formato inválido! Use o ID do usuário ou mencione (@usuário)",
+                    "❌ Formato inválido! Use:\n• ID (18 dígitos)\n• Ou mencione (@usuário)",
                     ephemeral=True
                 )
                 return
                 
-            # Valida o ID extraído
-            if len(discord_id) != 18:  # IDs do Discord têm exatamente 18 dígitos
+            # Verifica se o ID tem 18 dígitos
+            if len(discord_id) != 18:
                 await interaction.response.send_message(
-                    "❌ ID do Discord inválido! Deve ter exatamente 18 dígitos.",
+                    "❌ ID do Discord deve ter exatamente 18 dígitos!",
                     ephemeral=True
                 )
                 return
@@ -304,12 +315,15 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
             member = interaction.guild.get_member(int(discord_id))
             if not member:
                 await interaction.response.send_message(
-                    "❌ Usuário não encontrado no servidor! Verifique o ID.",
+                    "❌ Usuário não encontrado no servidor! Verifique se:"
+                    "\n1. O ID está correto"
+                    "\n2. O usuário está no servidor"
+                    "\n3. O bot tem permissão para ver membros",
                     ephemeral=True
                 )
                 return
 
-            # Restante do código de salvamento...
+            # Verifica se o streamer já está cadastrado
             data = load_data()
             guild_id = str(interaction.guild.id)
 
@@ -317,25 +331,26 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
                 data[guild_id] = {}
 
             if twitch_username in data[guild_id]:
-                existing_user = data[guild_id][twitch_username]
+                existing_user_id = data[guild_id][twitch_username]
                 await interaction.response.send_message(
-                    f"⚠️ `{twitch_username}` já está vinculado a <@{existing_user}>",
+                    f"⚠️ O streamer '{twitch_username}' já está vinculado a <@{existing_user_id}>",
                     ephemeral=True
                 )
                 return
 
-            data[guild_id][twitch_username] = str(member.id)
+            # Salva os dados
+            data[guild_id][twitch_username] = discord_id
             save_data(data)
 
             await interaction.response.send_message(
-                f"✅ {member.mention} vinculado à Twitch: `{twitch_username}`",
+                f"✅ {member.mention} vinculado ao Twitch: `{twitch_username}`",
                 ephemeral=True
             )
 
         except Exception as e:
-            logger.error("Erro ao adicionar streamer: %s", e)
+            logger.error(f"Erro ao adicionar streamer: {e}", exc_info=True)
             await interaction.response.send_message(
-                f"❌ **Erro:** {str(e)}",
+                "❌ Ocorreu um erro interno ao processar sua solicitação",
                 ephemeral=True
             )
 
