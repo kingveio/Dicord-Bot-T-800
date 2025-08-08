@@ -184,21 +184,17 @@ async def status_command(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # Task de verificação
-
 async def check_streams_task():
     await bot.wait_until_ready()
     logger.info("✅ Task de checagem iniciada")
     while not bot.is_closed():
         try:
             data = await get_cached_data()
-            
-            # --- Adicione esta verificação ---
             if not isinstance(data, dict):
                 logger.error(f"❌ Dados do cache não são um dicionário. Tipo: {type(data)}")
                 await asyncio.sleep(CHECK_INTERVAL)
                 continue
-            # ----------------------------------
-
+            
             all_streamers = {s for g in data.values() for s in g.keys()}
             if not all_streamers:
                 await asyncio.sleep(CHECK_INTERVAL)
@@ -207,9 +203,31 @@ async def check_streams_task():
             live_streamers = await bot.twitch_api.check_live_streams(all_streamers)
 
             for guild_id, streamers in data.items():
-                # Resto da lógica...
-                # ...
+                guild = bot.get_guild(int(guild_id))
+                if not guild: continue
+                live_role = await get_or_create_live_role(guild)
+                if live_role is None: continue
                 
+                for twitch_user, discord_id in streamers.items():
+                    try:
+                        member = guild.get_member(int(discord_id))
+                        if not member: continue
+                        is_live = twitch_user.lower() in live_streamers
+                        has_role = live_role in member.roles
+                        
+                        if is_live and not has_role:
+                            await member.add_roles(live_role)
+                            channel = guild.system_channel or discord.utils.get(guild.text_channels, name="geral")
+                            if channel:
+                                await channel.send(
+                                    f"🎥 {member.mention} está ao vivo na Twitch como `{twitch_user}`!",
+                                    allowed_mentions=discord.AllowedMentions(users=True)
+                                )
+                        elif not is_live and has_role:
+                            await member.remove_roles(live_role)
+                    except Exception as e:
+                        logger.error(f"Erro ao atualizar cargo para {twitch_user} ({discord_id}): {e}")
+
         except Exception as e:
             logger.error(f"Erro no verificador principal: {e}")
 
