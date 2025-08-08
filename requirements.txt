@@ -2,5 +2,5 @@ discord.py==2.3.2
 py-cord==2.4.1  # Versão sem dependências de voz
 google-api-python-client==2.104.0
 Flask==2.3.2
-aiohttp==3.8.6
 gunicorn==21.2.0
+aiohttp==3.9.5
