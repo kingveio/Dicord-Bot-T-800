@@ -660,10 +660,17 @@ def run_bot():
     bot.run(TOKEN)
 
 if __name__ == '__main__':
-    # Inicia o servidor Flask em uma thread separada
-    flask_thread = threading.Thread(target=run_flask)
-    flask_thread.daemon = True
+    # Cria arquivo de dados se não existir
+    if not os.path.exists(DATA_FILE):
+        with open(DATA_FILE, 'w') as f:
+            json.dump({}, f)
+    
+    # Inicia o Flask em thread separada
+    flask_thread = threading.Thread(
+        target=lambda: app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080))),
+        daemon=True
+    )
     flask_thread.start()
     
     # Inicia o bot Discord
-    run_bot()
+    bot.run(TOKEN)
