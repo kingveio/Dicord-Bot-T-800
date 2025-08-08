@@ -1,5 +1,2 @@
-python-3.11.9
-git add runtime.txt
-git commit -m "Definindo Python 3.12.4 para o Render"
-git push origin main
+python-3.12.4
 
