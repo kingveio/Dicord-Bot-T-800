@@ -6,7 +6,6 @@ import asyncio
 import json
 import os
 import sys
-import time
 import logging
 import threading
 import re
@@ -71,7 +70,7 @@ def health_check():
     }), 200
 
 def run_flask():
-    app.run(host='0.0.0.0', port=8080)
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
 
 # ========== SERVIÇO DO GOOGLE DRIVE ==========
 class GoogleDriveService:
@@ -155,7 +154,6 @@ drive_service = GoogleDriveService()
 
 # ========== GERENCIAMENTO DE DADOS ==========
 def validate_data_structure(data):
-    """Valida a estrutura dos dados"""
     if not isinstance(data, dict):
         return False
     for guild_id, streamers in data.items():
@@ -167,7 +165,6 @@ def validate_data_structure(data):
     return True
 
 def backup_data():
-    """Cria backup dos dados"""
     try:
         if os.path.exists(DATA_FILE):
             backup_dir = "backups"
@@ -180,79 +177,43 @@ def backup_data():
         logger.error(f"❌ Erro no backup: {str(e)}")
 
 def load_data():
-    """Carrega dados com tratamento robusto de erros"""
     try:
-        # Verifica se o arquivo existe localmente
-        if not os.path.exists(DATA_FILE):
-            logger.info("ℹ️ Arquivo local não encontrado, tentando baixar do Drive")
-            if not drive_service.download_file(DATA_FILE, DATA_FILE):
-                logger.info("ℹ️ Criando novo arquivo de dados vazio")
-                with open(DATA_FILE, 'w', encoding='utf-8') as f:
-                    json.dump({}, f)
-                return {}
+        if not drive_service.download_file(DATA_FILE, DATA_FILE):
+            logger.warning("⚠️ Arquivo não encontrado no Drive, usando local")
         
-        # Verifica se o arquivo está vazio
-        if os.path.getsize(DATA_FILE) == 0:
-            logger.warning("⚠️ Arquivo vazio, retornando dados padrão")
+        if not os.path.exists(DATA_FILE):
+            logger.info("ℹ️ Criando novo arquivo de dados")
             return {}
             
-        # Lê e valida o conteúdo
         with open(DATA_FILE, 'r', encoding='utf-8') as f:
-            try:
-                content = f.read().strip()
-                if not content:
-                    logger.warning("⚠️ Arquivo vazio, retornando dados padrão")
-                    return {}
-                    
-                data = json.loads(content)
-                if not validate_data_structure(data):
-                    raise ValueError("Estrutura de dados inválida")
-                return data
-                
-            except json.JSONDecodeError as e:
-                logger.error(f"❌ JSON inválido: {str(e)}")
-                # Tenta fazer backup do arquivo corrompido
-                try:
-                    corrupt_backup = f"{DATA_FILE}.corrupt.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-                    shutil.copy(DATA_FILE, corrupt_backup)
-                    logger.info(f"✅ Backup do arquivo corrompido criado: {corrupt_backup}")
-                except Exception as backup_error:
-                    logger.error(f"❌ Falha ao criar backup do arquivo corrompido: {str(backup_error)}")
-                
-                # Tenta baixar novamente do Drive
-                logger.info("ℹ️ Tentando baixar versão válida do Drive")
-                if drive_service.download_file(DATA_FILE, DATA_FILE):
-                    return load_data()  # Recursão com cuidado
-                
-                # Se não conseguir, cria novo arquivo
-                logger.info("ℹ️ Criando novo arquivo de dados vazio")
-                with open(DATA_FILE, 'w', encoding='utf-8') as new_file:
-                    json.dump({}, new_file)
+            content = f.read().strip()
+            if not content:
+                logger.warning("⚠️ Arquivo vazio, retornando dados padrão")
                 return {}
                 
+            data = json.loads(content)
+            if not validate_data_structure(data):
+                raise ValueError("Estrutura de dados inválida")
+            return data
+            
+    except json.JSONDecodeError as e:
+        logger.error(f"❌ JSON inválido: {str(e)}")
+        backup_data()
+        return {}
     except Exception as e:
-        logger.error(f"❌ Erro crítico ao carregar dados: {str(e)}")
-        # Cria arquivo vazio como fallback
-        try:
-            with open(DATA_FILE, 'w', encoding='utf-8') as f:
-                json.dump({}, f)
-        except Exception as fallback_error:
-            logger.error(f"❌ Falha ao criar arquivo fallback: {str(fallback_error)}")
+        logger.error(f"❌ Erro ao carregar dados: {str(e)}")
         return {}
 
 def save_data(data):
-    """Salva dados com validação completa"""
     try:
         if not validate_data_structure(data):
             raise ValueError("Dados não passaram na validação de estrutura")
             
-        backup_data()  # Faz backup antes de salvar
+        backup_data()
         
-        # Salva localmente
         with open(DATA_FILE, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
             
-        # Envia para o Drive
         if not drive_service.upload_file(DATA_FILE, DATA_FILE):
             logger.error("❌ Falha ao enviar para o Google Drive")
             
@@ -265,8 +226,6 @@ class TwitchAPI:
     def __init__(self):
         self.token = None
         self.token_expiry = None
-        self.user_cache = {}
-        self.cache_expiry = timedelta(hours=1)
 
     async def get_token(self, retries=3):
         for attempt in range(retries):
@@ -293,17 +252,6 @@ class TwitchAPI:
         return None
 
     async def validate_streamer(self, username):
-        username = username.lower()
-        if username in self.user_cache:
-            cached_time, is_valid = self.user_cache[username]
-            if datetime.now() - cached_time < self.cache_expiry:
-                return is_valid
-        
-        is_valid = await self._validate_streamer_api(username)
-        self.user_cache[username] = (datetime.now(), is_valid)
-        return is_valid
-
-    async def _validate_streamer_api(self, username):
         token = await self.get_token()
         if not token:
             return False
@@ -366,7 +314,7 @@ bot = commands.Bot(
     intents=intents,
     activity=discord.Activity(
         type=discord.ActivityType.watching,
-        name="Exterminador do Futuro 2"
+        name="Streamers da Twitch"
     )
 )
 
@@ -398,7 +346,6 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
             twitch_username = self.twitch_name.value.lower().strip()
             discord_input = self.discord_id.value.strip()
 
-            # Validação Twitch
             if not re.match(r'^[a-zA-Z0-9_]{3,25}$', twitch_username):
                 await interaction.response.send_message(
                     "❌ Nome inválido na Twitch! Use apenas letras, números e _",
@@ -413,8 +360,7 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
                 )
                 return
 
-            # Processa ID Discord
-            discord_id = re.sub(r'\D', '', discord_input)  # Extrai apenas números
+            discord_id = re.sub(r'\D', '', discord_input)
             if len(discord_id) != 18:
                 await interaction.response.send_message(
                     "❌ ID Discord inválido! Deve ter 18 dígitos.",
@@ -430,7 +376,6 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
                 )
                 return
 
-            # Salva os dados
             data = load_data()
             guild_id = str(interaction.guild.id)
 
@@ -631,7 +576,6 @@ async def check_streams():
 async def on_ready():
     logger.info(f"✅ Bot conectado como {bot.user.name}")
     
-    # Verificação inicial do sistema de dados
     try:
         test_data = load_data()
         if not isinstance(test_data, dict):
@@ -640,9 +584,8 @@ async def on_ready():
         logger.info("✅ Sistema de dados verificado")
     except Exception as e:
         logger.error(f"❌ Falha crítica na verificação de dados: {e}")
-        save_data({})  # Força reset
+        save_data({})
 
-    # Sincroniza comandos e inicia tasks
     try:
         await bot.tree.sync()
         bot.loop.create_task(check_streams())
@@ -652,25 +595,15 @@ async def on_ready():
 
 # ========== INICIALIZAÇÃO ==========
 def run_bot():
-    # Cria arquivo de dados inicial se não existir
-    if not os.path.exists(DATA_FILE):
-        save_data({})
-    
-    # Inicia o bot
-    bot.run(TOKEN)
-
-if __name__ == '__main__':
-    # Cria arquivo de dados se não existir
     if not os.path.exists(DATA_FILE):
         with open(DATA_FILE, 'w') as f:
             json.dump({}, f)
-    
-    # Inicia o Flask em thread separada
+    bot.run(TOKEN)
+
+if __name__ == '__main__':
     flask_thread = threading.Thread(
         target=lambda: app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080))),
         daemon=True
     )
     flask_thread.start()
-    
-    # Inicia o bot Discord
-    bot.run(TOKEN)
+    run_bot()
