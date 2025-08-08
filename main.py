@@ -1,3 +1,4 @@
+# [CÓDIGO COMPLETO COM GOOGLE DRIVE INTEGRADO]
 import discord
 from discord.ext import commands
 from discord import app_commands, ui
@@ -13,13 +14,16 @@ import re
 from datetime import datetime, timedelta
 from flask import Flask, jsonify
 import requests
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
+import io
 
 # ========== CONFIGURAÇÃO INICIAL ==========
 print("╔════════════════════════════════════════════╗")
 print("║       BOT DE NOTIFICAÇÕES DA TWITCH        ║")
 print("╚════════════════════════════════════════════╝")
 
-# Configuração de logging avançada
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -30,8 +34,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Verifica variáveis de ambiente necessárias
-REQUIRED_ENV = ["DISCORD_TOKEN", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET"]
+# Verifica variáveis de ambiente
+REQUIRED_ENV = [
+    "DISCORD_TOKEN", 
+    "TWITCH_CLIENT_ID", 
+    "TWITCH_CLIENT_SECRET", 
+    "DRIVE_FOLDER_ID",
+    "DRIVE_PRIVATE_KEY_ID",
+    "DRIVE_PRIVATE_KEY",
+    "DRIVE_CLIENT_ID"
+]
 missing = [var for var in REQUIRED_ENV if var not in os.environ]
 
 if missing:
@@ -42,74 +54,115 @@ if missing:
 TOKEN = os.environ["DISCORD_TOKEN"]
 TWITCH_CLIENT_ID = os.environ["TWITCH_CLIENT_ID"]
 TWITCH_SECRET = os.environ["TWITCH_CLIENT_SECRET"]
+DRIVE_FOLDER_ID = os.environ["DRIVE_FOLDER_ID"]
 DATA_FILE = "streamers.json"
 CHECK_INTERVAL = 55
 START_TIME = datetime.now()
 
-# ========== SERVIDOR FLASK PARA HEALTH CHECKS ==========
-app = Flask(__name__)
-last_ping_time = time.time()
-bot_ready = False
+# ========== SERVIÇO DO GOOGLE DRIVE ==========
+class GoogleDriveService:
+    def __init__(self):
+        self.SCOPES = ['https://www.googleapis.com/auth/drive']
+        self.service_account_info = {
+            "type": "service_account",
+            "project_id": "bot-t-800",
+            "private_key_id": os.environ["DRIVE_PRIVATE_KEY_ID"],
+            "private_key": os.environ["DRIVE_PRIVATE_KEY"].replace('\\n', '\n'),
+            "client_email": "discord-bot-t-800@bot-t-800.iam.gserviceaccount.com",
+            "client_id": os.environ["DRIVE_CLIENT_ID"],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/discord-bot-t-800%40bot-t-800.iam.gserviceaccount.com"
+        }
+        self.service = self._authenticate()
 
-@app.route('/')
-def home():
-    return "🤖 Bot Twitch Online! Use /ping para status."
+    def _authenticate(self):
+        creds = service_account.Credentials.from_service_account_info(
+            self.service_account_info,
+            scopes=self.SCOPES
+        )
+        return build('drive', 'v3', credentials=creds)
 
-@app.route('/ping')
-def ping():
-    global last_ping_time
-    last_ping_time = time.time()
-    return jsonify({
-        "status": "online",
-        "bot_ready": bot_ready,
-        "uptime": str(datetime.now() - START_TIME),
-        "last_check": getattr(bot, '_last_check', 'N/A')
-    }), 200
+    def upload_file(self, file_path, file_name):
+        file_metadata = {
+            'name': file_name,
+            'parents': [DRIVE_FOLDER_ID]
+        }
+        media = MediaFileUpload(file_path, mimetype='application/json')
+        
+        try:
+            existing = self._find_file(file_name)
+            if existing:
+                file = self.service.files().update(
+                    fileId=existing['id'],
+                    media_body=media
+                ).execute()
+            else:
+                file = self.service.files().create(
+                    body=file_metadata,
+                    media_body=media,
+                    fields='id'
+                ).execute()
+            logger.info(f"📤 Upload realizado: {file_name} (ID: {file.get('id')})")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Falha no upload: {str(e)}")
+            return False
 
-def run_flask():
-    app.run(host='0.0.0.0', port=8080, threaded=True, use_reloader=False)
+    def download_file(self, file_name, save_path):
+        try:
+            file = self._find_file(file_name)
+            if not file:
+                return False
+                
+            request = self.service.files().get_media(fileId=file['id'])
+            fh = io.FileIO(save_path, 'wb')
+            downloader = MediaIoBaseDownload(fh, request)
+            
+            done = False
+            while not done:
+                status, done = downloader.next_chunk()
+            logger.info(f"📥 Download realizado: {file_name}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Falha no download: {str(e)}")
+            return False
 
-# ========== CONFIGURAÇÃO DO BOT DISCORD ==========
-intents = discord.Intents.default()
-intents.members = True
-intents.message_content = True
+    def _find_file(self, file_name):
+        query = f"name='{file_name}' and '{DRIVE_FOLDER_ID}' in parents and trashed=false"
+        results = self.service.files().list(
+            q=query,
+            fields="files(id, name)"
+        ).execute()
+        return results.get('files', [None])[0]
 
-bot = commands.Bot(
-    command_prefix="!",
-    intents=intents,
-    activity=discord.Activity(
-        type=discord.ActivityType.watching,
-        name="Streamers da Twitch"
-    )
-)
+drive_service = GoogleDriveService()
 
 # ========== GERENCIAMENTO DE DADOS ==========
 def load_data():
     try:
-        if not os.path.exists(DATA_FILE):
-            with open(DATA_FILE, "w", encoding='utf-8') as f:
-                json.dump({}, f)
-            return {}
-
-        with open(DATA_FILE, "r", encoding='utf-8') as f:
-            return json.load(f)
+        if drive_service.download_file(DATA_FILE, DATA_FILE):
+            with open(DATA_FILE, 'r') as f:
+                return json.load(f)
+        return {}
     except Exception as e:
-        logger.error("Erro ao carregar dados: %s", e)
+        logger.error(f"Erro ao carregar dados: {str(e)}")
         return {}
 
 def save_data(data):
     try:
-        with open(DATA_FILE, "w", encoding='utf-8') as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+        with open(DATA_FILE, 'w') as f:
+            json.dump(data, f, indent=2)
+        drive_service.upload_file(DATA_FILE, DATA_FILE)
     except Exception as e:
-        logger.error("Erro ao salvar dados: %s", e)
+        logger.error(f"Erro ao salvar dados: {str(e)}")
 
-# ========== INTEGRAÇÃO COM TWITCH API ==========
+# ========== TWITCH API ==========
 class TwitchAPI:
     def __init__(self):
         self.token = None
         self.token_expiry = None
-        bot._twitch_token_valid = False
 
     async def get_token(self, retries=3):
         for attempt in range(retries):
@@ -124,17 +177,15 @@ class TwitchAPI:
                             "client_id": TWITCH_CLIENT_ID,
                             "client_secret": TWITCH_SECRET,
                             "grant_type": "client_credentials"
-                        },
-                        timeout=10
+                        }
                     ) as response:
                         data = await response.json()
                         self.token = data["access_token"]
                         self.token_expiry = datetime.now() + timedelta(seconds=3300)
-                        bot._twitch_token_valid = True
                         return self.token
             except Exception as e:
                 logger.error(f"Erro ao obter token (tentativa {attempt+1}): {e}")
-                await asyncio.sleep(5 * (attempt + 1))
+                await asyncio.sleep(2)
         return None
 
     async def validate_streamer(self, username):
@@ -151,12 +202,12 @@ class TwitchAPI:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
                     f"https://api.twitch.tv/helix/users?login={username}",
-                    headers=headers,
-                    timeout=10
+                    headers=headers
                 ) as response:
                     data = await response.json()
                     return len(data.get("data", [])) > 0
-        except Exception:
+        except Exception as e:
+            logger.error(f"Erro ao validar streamer: {e}")
             return False
 
     async def check_live_streams(self, usernames):
@@ -171,25 +222,40 @@ class TwitchAPI:
 
         live_streamers = set()
         batch_size = 100
-        usernames_list = list(usernames)
         
-        for i in range(0, len(usernames_list), batch_size):
-            batch = usernames_list[i:i + batch_size]
+        for i in range(0, len(usernames), batch_size):
+            batch = usernames[i:i + batch_size]
             url = "https://api.twitch.tv/helix/streams?user_login=" + "&user_login=".join(batch)
             
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers, timeout=15) as response:
-                    data = await response.json()
-                    bot._last_check = datetime.now().isoformat()
-                    live_streamers.update({s["user_login"].lower() for s in data.get("data", [])})
-            
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(url, headers=headers) as response:
+                        data = await response.json()
+                        live_streamers.update({s["user_login"].lower() for s in data.get("data", [])})
+            except Exception as e:
+                logger.error(f"Erro ao verificar lives: {e}")
+
             await asyncio.sleep(1)
             
         return live_streamers
 
 twitch_api = TwitchAPI()
 
-# ========== INTERFACE DO DISCORD ==========
+# ========== DISCORD BOT ==========
+intents = discord.Intents.default()
+intents.members = True
+intents.message_content = True
+
+bot = commands.Bot(
+    command_prefix="!",
+    intents=intents,
+    activity=discord.Activity(
+        type=discord.ActivityType.watching,
+        name="Streamers da Twitch"
+    )
+)
+
+# ========== STREAMERS MODAL ==========
 class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
     twitch_name = ui.TextInput(
         label="Nome na Twitch",
@@ -199,8 +265,8 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
     )
     
     discord_id = ui.TextInput(
-        label="ID do Membro do Discord",
-        placeholder="Digite o ID (18 dígitos) ou mencione (@usuário)",
+        label="ID/Menção do Discord",
+        placeholder="Digite o ID ou @usuário",
         min_length=3,
         max_length=32
     )
@@ -209,22 +275,22 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
         try:
             if not interaction.user.guild_permissions.administrator:
                 await interaction.response.send_message(
-                    "❌ Apenas administradores podem adicionar streamers!",
+                    "❌ Apenas administradores podem usar este comando!",
                     ephemeral=True
                 )
                 return
 
             twitch_username = self.twitch_name.value.lower().strip()
             discord_input = self.discord_id.value.strip()
-            
-            # Validação do nome Twitch
+
+            # Validação Twitch
             if not re.match(r'^[a-zA-Z0-9_]{3,25}$', twitch_username):
                 await interaction.response.send_message(
-                    "❌ Nome inválido! Use apenas letras, números e underscores.",
+                    "❌ Nome inválido na Twitch! Use apenas letras, números e _",
                     ephemeral=True
                 )
                 return
-                
+
             if not await twitch_api.validate_streamer(twitch_username):
                 await interaction.response.send_message(
                     f"❌ Streamer '{twitch_username}' não encontrado na Twitch!",
@@ -232,22 +298,11 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
                 )
                 return
 
-            # EXTRAÇÃO CORRIGIDA DO ID DISCORD
-            discord_id = None
-            if discord_input.startswith('<@') and discord_input.endswith('>'):  # Menção
-                discord_id = re.sub(r'\D', '', discord_input)  # Extrai apenas números
-            elif discord_input.isdigit():  # ID direto
-                discord_id = discord_input
-            else:
-                await interaction.response.send_message(
-                    "❌ Formato inválido! Use ID (18 dígitos) ou @usuário",
-                    ephemeral=True
-                )
-                return
-                
+            # Processa ID Discord
+            discord_id = re.sub(r'\D', '', discord_input)  # Extrai apenas números
             if len(discord_id) != 18:
                 await interaction.response.send_message(
-                    "❌ ID deve ter exatamente 18 dígitos!",
+                    "❌ ID Discord inválido! Deve ter 18 dígitos.",
                     ephemeral=True
                 )
                 return
@@ -255,43 +310,41 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
             member = interaction.guild.get_member(int(discord_id))
             if not member:
                 await interaction.response.send_message(
-                    "❌ Usuário não encontrado! Verifique:\n"
-                    "1. Se o usuário está no servidor\n"
-                    "2. Se o ID está correto\n"
-                    "3. Permissões do bot",
+                    "❌ Membro não encontrado no servidor!",
                     ephemeral=True
                 )
                 return
 
+            # Salva os dados
             data = load_data()
             guild_id = str(interaction.guild.id)
-            
+
             if guild_id not in data:
                 data[guild_id] = {}
-                
+
             if twitch_username in data[guild_id]:
-                existing_id = data[guild_id][twitch_username]
                 await interaction.response.send_message(
-                    f"⚠️ Já vinculado a <@{existing_id}>",
+                    f"⚠️ O streamer '{twitch_username}' já está vinculado!",
                     ephemeral=True
                 )
                 return
-                
+
             data[guild_id][twitch_username] = discord_id
             save_data(data)
-            
+
             await interaction.response.send_message(
-                f"✅ {member.mention} vinculado a `{twitch_username}`",
+                f"✅ {member.mention} vinculado ao Twitch: `{twitch_username}`",
                 ephemeral=True
             )
 
         except Exception as e:
-            logger.error(f"Erro ao adicionar: {str(e)}", exc_info=True)
+            logger.error(f"Erro ao adicionar streamer: {e}")
             await interaction.response.send_message(
                 "❌ Erro interno ao processar!",
                 ephemeral=True
             )
 
+# ========== STREAMERS VIEW ==========
 class StreamersView(ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -315,7 +368,10 @@ class StreamersView(ui.View):
         guild_streamers = data.get(str(interaction.guild.id), {})
 
         if not guild_streamers:
-            await interaction.response.send_message("❌ Nenhum streamer registrado!", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ Nenhum streamer vinculado neste servidor!",
+                ephemeral=True
+            )
             return
 
         select = ui.Select(placeholder="Selecione um streamer para remover...")
@@ -323,7 +379,7 @@ class StreamersView(ui.View):
         for streamer, discord_id in guild_streamers.items():
             member = interaction.guild.get_member(int(discord_id))
             select.add_option(
-                label=f"{streamer}",
+                label=streamer,
                 description=f"Vinculado a: {member.display_name if member else 'Não encontrado'}",
                 value=streamer
             )
@@ -332,13 +388,11 @@ class StreamersView(ui.View):
             data = load_data()
             guild_id = str(interaction.guild.id)
 
-            if guild_id in data and select.values[0] in data[guild_id]:
-                removed_user = select.values[0]
-                del data[guild_id][removed_user]
+            if select.values[0] in data.get(guild_id, {}):
+                del data[guild_id][select.values[0]]
                 save_data(data)
-                
                 await interaction.response.send_message(
-                    f"✅ `{removed_user}` removido com sucesso!",
+                    f"✅ Streamer '{select.values[0]}' removido!",
                     ephemeral=True
                 )
 
@@ -353,33 +407,43 @@ class StreamersView(ui.View):
         guild_streamers = data.get(str(interaction.guild.id), {})
 
         if not guild_streamers:
-            await interaction.response.send_message("📭 Nenhum streamer registrado!", ephemeral=True)
+            await interaction.response.send_message(
+                "📭 Nenhum streamer vinculado neste servidor!",
+                ephemeral=True
+            )
             return
 
         embed = discord.Embed(title="🎮 Streamers Vinculados", color=0x9147FF)
-        
         for twitch_user, discord_id in guild_streamers.items():
             member = interaction.guild.get_member(int(discord_id))
             embed.add_field(
                 name=f"🔹 {twitch_user}",
-                value=f"Discord: {member.mention if member else '🚨 Usuário não encontrado'}",
+                value=f"Discord: {member.mention if member else '🚨 Não encontrado'}",
                 inline=False
             )
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# ========== VERIFICADOR DE STREAMS ==========
+# ========== COMANDOS ==========
+@bot.tree.command(name="streamers", description="Gerenciar streamers vinculados")
+@app_commands.checks.has_permissions(administrator=True)
+async def streamers_command(interaction: discord.Interaction):
+    await interaction.response.send_message(
+        "**🎮 Painel de Streamers** - Escolha uma opção:",
+        view=StreamersView(),
+        ephemeral=True
+    )
+
+# ========== VERIFICAÇÃO DE LIVES ==========
 async def check_streams():
     while True:
         try:
             data = load_data()
-            if not data:
-                await asyncio.sleep(CHECK_INTERVAL)
-                continue
-
-            all_streamers = set()
-            for guild_streamers in data.values():
-                all_streamers.update(guild_streamers.keys())
+            all_streamers = {
+                twitch_user 
+                for guild_data in data.values() 
+                for twitch_user in guild_data.keys()
+            }
 
             if not all_streamers:
                 await asyncio.sleep(CHECK_INTERVAL)
@@ -416,117 +480,45 @@ async def check_streams():
 
                         if is_live and not has_role:
                             await member.add_roles(live_role)
-                            
                             channel = guild.system_channel or discord.utils.get(guild.text_channels, name="geral")
-                            if channel and channel.permissions_for(guild.me).send_messages:
+                            if channel:
                                 await channel.send(
-                                    f"🎥 {member.mention} está ao vivo na Twitch!",
-                                    allowed_mentions=discord.AllowedMentions(users=True))
-                            
+                                    f"🎥 {member.mention} está ao vivo na Twitch como `{twitch_user}`!",
+                                    allowed_mentions=discord.AllowedMentions(users=True)
+                                )
+
                         elif not is_live and has_role:
                             await member.remove_roles(live_role)
-                            
+
                     except Exception as e:
                         logger.error(f"Erro ao atualizar cargo: {e}")
 
         except Exception as e:
             logger.error(f"Erro no verificador: {e}")
-
+        
         await asyncio.sleep(CHECK_INTERVAL)
 
-# ========== COMANDOS SLASH ==========
-@bot.tree.command(name="streamers", description="Gerenciar notificações de streamers (Apenas ADMs)")
-@app_commands.checks.has_permissions(administrator=True)
-async def streamers_command(interaction: discord.Interaction):
-    await interaction.response.send_message(
-        "**🎮 Painel de Streamers** - Escolha uma opção:",
-        view=StreamersView(),
-        ephemeral=True
-    )
-
-@bot.tree.command(name="ajuda", description="Mostra informações sobre o bot")
-async def ajuda(interaction: discord.Interaction):
-    embed = discord.Embed(title="Ajuda do Bot de Twitch", color=0x9147FF)
-    embed.add_field(
-        name="/streamers", 
-        value="Gerencia os streamers monitorados (apenas administradores)", 
-        inline=False
-    )
-    embed.add_field(
-        name="Como funciona",
-        value="O bot verifica a cada minuto quem está ao vivo e atribui o cargo 'Ao Vivo'",
-        inline=False
-    )
-    await interaction.response.send_message(embed=embed, ephemeral=True)
-
-@bot.tree.error
-async def on_app_command_error(interaction: discord.Interaction, error: app_commands.AppCommandError):
-    if isinstance(error, app_commands.MissingPermissions):
-        await interaction.response.send_message(
-            "❌ Você precisa ser **Administrador** para usar este comando!",
-            ephemeral=True
-        )
-    else:
-        logger.error(f"Erro no comando: {error}")
-        await interaction.response.send_message(
-            "❌ Ocorreu um erro ao executar este comando!",
-            ephemeral=True
-        )
-
-# ========== EVENTOS DO BOT ==========
+# ========== EVENTOS ==========
 @bot.event
 async def on_ready():
-    global bot_ready
-    bot_ready = True
+    logger.info(f"✅ Bot conectado como {bot.user.name}")
     
-    logger.info(f"✅ Bot conectado como {bot.user}")
-    logger.info(f"🌐 Servidores: {len(bot.guilds)}")
-
-    bot.add_view(StreamersView())
+    # Teste de conexão com o Drive
+    test_data = {"test": datetime.now().isoformat()}
+    with open(DATA_FILE, 'w') as f:
+        json.dump(test_data, f)
+    
+    if drive_service.upload_file(DATA_FILE, DATA_FILE):
+        logger.info("✅ Conexão com Google Drive estabelecida!")
+    else:
+        logger.error("❌ Falha na conexão com Google Drive!")
+    
+    os.remove(DATA_FILE)
+    
+    # Sincroniza comandos e inicia tasks
+    await bot.tree.sync()
     bot.loop.create_task(check_streams())
-    threading.Thread(target=background_pinger, daemon=True).start()
 
-    try:
-        synced = await bot.tree.sync()
-        logger.info(f"🔗 {len(synced)} comandos sincronizados")
-    except Exception as e:
-        logger.error(f"⚠️ Erro ao sincronizar: {e}")
-
-def background_pinger():
-    while True:
-        try:
-            with app.test_client() as client:
-                client.get('/ping')
-            if 'RENDER_EXTERNAL_URL' in os.environ:
-                requests.get(f"{os.environ['RENDER_EXTERNAL_URL']}/ping", timeout=10)
-        except Exception as e:
-            logger.error(f"Erro no pinger: {e}")
-        time.sleep(45)
-
-def run_bot():
-    restart_count = 0
-    max_restarts = 10
-    restart_delay = 30
-
-    while restart_count < max_restarts:
-        try:
-            logger.info(f"🚀 Iniciando bot (Tentativa {restart_count + 1}/{max_restarts})")
-            flask_thread = threading.Thread(target=run_flask, daemon=True)
-            flask_thread.start()
-            bot.run(TOKEN)
-            restart_count = 0
-        except discord.LoginError as e:
-            logger.critical("❌ ERRO FATAL: Token do Discord inválido!")
-            break
-        except Exception as e:
-            logger.error(f"⚠️ Erro na execução: {type(e).__name__} - {str(e)}")
-            restart_count += 1
-            if restart_count >= max_restarts:
-                logger.critical("🔴 Máximo de reinícios atingido! Encerrando...")
-                break
-            delay = min(restart_delay * (2 ** (restart_count - 1)), 300)
-            logger.info(f"⏳ Reiniciando em {delay} segundos...")
-            time.sleep(delay)
-
+# ========== INICIALIZAÇÃO ==========
 if __name__ == '__main__':
-    run_bot()
+    bot.run(TOKEN)
