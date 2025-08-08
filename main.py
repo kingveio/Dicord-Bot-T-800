@@ -144,15 +144,13 @@ async def on_ready():
         logging.error(f"⚠️ Erro ao sincronizar comandos: {e}")
 
 # ========== INICIALIZAÇÃO ==========
-if __name__ == "__main__":
-    # Configuração para evitar dormência no Render
-    if 'RENDER' in os.environ:
-        logging.info("⚡ Modo Render ativado - Anti-sleep")
+if __name__ == '__main__':
+    # Inicia o Flask em thread separada
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
     
-    # Mantém o bot rodando com reinício automático
-    while True:
-        try:
-            bot.run(TOKEN)
+    # Inicia o bot
+    bot.run(TOKEN)
         except Exception as e:
             logging.error(f"🚨 Bot caiu: {e}. Reconectando em 30s...")
             bot_ready = False
