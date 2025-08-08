@@ -145,13 +145,33 @@ async def on_ready():
 
 # ========== INICIALIZAÇÃO ==========
 if __name__ == '__main__':
+    # Configuração para evitar dormência no Render
+    if 'RENDER' in os.environ:
+        logging.info("⚡ Modo Render ativado - Anti-sleep")
+    
     # Inicia o Flask em thread separada
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
     
-    # Inicia o bot
-    bot.run(TOKEN)
+    # Contador de reinícios
+    restart_count = 0
+    max_restarts = 10
+    
+    while restart_count < max_restarts:
+        try:
+            logging.info(f"⏳ Iniciando bot (tentativa {restart_count + 1}/{max_restarts})")
+            bot.run(TOKEN)
+        except discord.LoginError as e:
+            logging.error("❌ Token inválido! Verifique DISCORD_TOKEN")
+            break
         except Exception as e:
-            logging.error(f"🚨 Bot caiu: {e}. Reconectando em 30s...")
-            bot_ready = False
-            time.sleep(30)
+            logging.error(f"🚨 Erro: {type(e).__name__} - {str(e)}")
+            restart_count += 1
+            if restart_count >= max_restarts:
+                logging.error("🔴 Máximo de reinícios atingido! Encerrando...")
+                break
+            wait_time = min(30 * restart_count, 300)  # Backoff exponencial
+            logging.info(f"⏱️ Tentando novamente em {wait_time}s...")
+            time.sleep(wait_time)
+        else:
+            restart_count = 0  # Reset se sair normalmente
