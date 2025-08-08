@@ -235,7 +235,6 @@ twitch_api = TwitchAPI()
 
 # ========== INTERFACE DO DISCORD (MODAL PARA ADICIONAR STREAMERS) ==========
 class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
-    """Modal para adicionar um novo streamer com validações"""
     twitch_name = ui.TextInput(
         label="Nome na Twitch",
         placeholder="ex: alanzoka",
@@ -246,13 +245,21 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
     discord_id = ui.TextInput(
         label="ID do Membro do Discord",
         placeholder="Digite o ID do usuário ou mencione (@usuário)",
-        min_length=17,
-        max_length=20
+        min_length=3,  # Mínimo reduzido para aceitar menções
+        max_length=32  # Máximo suficiente para menções
     )
 
     async def on_submit(self, interaction: discord.Interaction):
         """Processa o formulário quando enviado"""
         try:
+            # Verifica se o usuário é administrador
+            if not interaction.user.guild_permissions.administrator:
+                await interaction.response.send_message(
+                    "❌ Apenas administradores podem adicionar streamers!",
+                    ephemeral=True
+                )
+                return
+
             twitch_username = self.twitch_name.value.lower().strip()
             discord_input = self.discord_id.value.strip()
             
@@ -272,7 +279,7 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
                 )
                 return
 
-            # Extrai o ID do Discord (suporta menção ou ID direto)
+            # Extrai o ID independentemente do formato (menção ou ID direto)
             discord_id = None
             if discord_input.startswith('<@') and discord_input.endswith('>'):  # É uma menção
                 discord_id = ''.join(c for c in discord_input if c.isdigit())
@@ -281,6 +288,14 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
             else:
                 await interaction.response.send_message(
                     "❌ Formato inválido! Use o ID do usuário ou mencione (@usuário)",
+                    ephemeral=True
+                )
+                return
+                
+            # Valida o ID extraído
+            if len(discord_id) != 18:  # IDs do Discord têm exatamente 18 dígitos
+                await interaction.response.send_message(
+                    "❌ ID do Discord inválido! Deve ter exatamente 18 dígitos.",
                     ephemeral=True
                 )
                 return
