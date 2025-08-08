@@ -5,6 +5,7 @@ import shutil
 import logging
 from datetime import datetime
 import aiofiles
+from drive_service import GoogleDriveService
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,6 @@ DATA_LOCK = asyncio.Lock()
 DATA_FILE = "streamers.json"
 
 def validate_data_structure_sync(data):
-    # A sua função de validação...
     if not isinstance(data, dict): return False
     for guild_id, streamers in data.items():
         if not isinstance(guild_id, str) or not isinstance(streamers, dict): return False
@@ -33,7 +33,7 @@ def backup_data_sync():
     except Exception as e:
         logger.error(f"❌ Erro no backup: {str(e)}")
 
-async def load_data_from_drive_if_exists(drive_service):
+async def load_data_from_drive_if_exists(drive_service: GoogleDriveService):
     global DATA_CACHE
     async with DATA_LOCK:
         try:
@@ -73,7 +73,7 @@ async def load_data_from_drive_if_exists(drive_service):
                 logger.error(f"❌ Fallback local falhou: {e2}")
                 DATA_CACHE = {}
 
-async def save_data_to_drive(data, drive_service):
+async def save_data_to_drive(data, drive_service: GoogleDriveService):
     global DATA_CACHE
     async with DATA_LOCK:
         if not validate_data_structure_sync(data):
@@ -91,7 +91,7 @@ async def get_cached_data():
     async with DATA_LOCK:
         return json.loads(json.dumps(DATA_CACHE))
 
-async def set_cached_data(new_data, drive_service, persist=True):
+async def set_cached_data(new_data, drive_service: GoogleDriveService, persist=True):
     global DATA_CACHE
     async with DATA_LOCK:
         DATA_CACHE = new_data
