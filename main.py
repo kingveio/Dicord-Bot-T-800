@@ -588,38 +588,43 @@ async def on_ready():
     except Exception as e:
         logger.error(f"⚠️ Erro ao sincronizar comandos: {e}")
 
-# ========== INICIALIZAÇÃO ==========
-if __name__ == '__main__':
-    # Configuração para evitar dormência no Render
-    if 'RENDER' in os.environ:
-        logger.info("⚡ Modo Render ativado - Anti-sleep")
-    
-    # Contador de reinícios para evitar loops infinitos
+# ========== INICIALIZAÇÃO COM SISTEMA DE REINÍCIO ==========
+def run_bot():
+    """Função para gerenciar o ciclo de vida do bot com reinícios controlados"""
     restart_count = 0
     max_restarts = 10
-    
+    restart_delay = 30  # Delay inicial em segundos
+
     while restart_count < max_restarts:
         try:
-            logger.info(f"⏳ Iniciando bot (tentativa {restart_count + 1}/{max_restarts})")
+            logger.info(f"🚀 Iniciando bot (Tentativa {restart_count + 1}/{max_restarts})")
             
-            # Inicia o servidor Flask em uma thread separada
+            # Inicia o servidor Flask em thread separada
             flask_thread = threading.Thread(target=run_flask, daemon=True)
             flask_thread.start()
             
             # Inicia o bot Discord
             bot.run(TOKEN)
             
+            # Se bot.run() retornar normalmente, resetamos o contador
+            restart_count = 0
+            
         except discord.LoginError as e:
-            logger.error("❌ Token inválido! Verifique DISCORD_TOKEN")
-            break
+            logger.critical("❌ ERRO FATAL: Token do Discord inválido!")
+            break  # Não tenta reiniciar para erros de autenticação
+            
         except Exception as e:
-            logger.error(f"🚨 Erro: {type(e).__name__} - {str(e)}")
+            logger.error(f"⚠️ Erro na execução: {type(e).__name__} - {str(e)}")
             restart_count += 1
+            
             if restart_count >= max_restarts:
-                logger.error("🔴 Máximo de reinícios atingido! Encerrando...")
+                logger.critical("🔴 Máximo de reinícios atingido! Encerrando...")
                 break
-            wait_time = min(30 * restart_count, 300)  # Espera exponencial
-            logger.info(f"⏱️ Tentando novamente em {wait_time}s...")
-            time.sleep(wait_time)
-        else:
-            restart_count = 0  # Reset se sair normalmente
+                
+            # Calcula delay com backoff exponencial (máximo 5 minutos)
+            delay = min(restart_delay * (2 ** (restart_count - 1)), 300)
+            logger.info(f"⏳ Reiniciando em {delay} segundos...")
+            time.sleep(delay)
+
+if __name__ == '__main__':
+    run_bot()  
