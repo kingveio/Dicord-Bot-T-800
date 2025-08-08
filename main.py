@@ -182,33 +182,62 @@ def backup_data():
 def load_data():
     """Carrega dados com tratamento robusto de erros"""
     try:
-        # Tenta baixar do Drive primeiro
-        if not drive_service.download_file(DATA_FILE, DATA_FILE):
-            logger.warning("⚠️ Arquivo não encontrado no Drive, usando local")
-        
         # Verifica se o arquivo existe localmente
         if not os.path.exists(DATA_FILE):
-            logger.info("ℹ️ Criando novo arquivo de dados")
+            logger.info("ℹ️ Arquivo local não encontrado, tentando baixar do Drive")
+            if not drive_service.download_file(DATA_FILE, DATA_FILE):
+                logger.info("ℹ️ Criando novo arquivo de dados vazio")
+                with open(DATA_FILE, 'w', encoding='utf-8') as f:
+                    json.dump({}, f)
+                return {}
+        
+        # Verifica se o arquivo está vazio
+        if os.path.getsize(DATA_FILE) == 0:
+            logger.warning("⚠️ Arquivo vazio, retornando dados padrão")
             return {}
             
         # Lê e valida o conteúdo
         with open(DATA_FILE, 'r', encoding='utf-8') as f:
-            content = f.read().strip()
-            if not content:
-                logger.warning("⚠️ Arquivo vazio, retornando dados padrão")
+            try:
+                content = f.read().strip()
+                if not content:
+                    logger.warning("⚠️ Arquivo vazio, retornando dados padrão")
+                    return {}
+                    
+                data = json.loads(content)
+                if not validate_data_structure(data):
+                    raise ValueError("Estrutura de dados inválida")
+                return data
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"❌ JSON inválido: {str(e)}")
+                # Tenta fazer backup do arquivo corrompido
+                try:
+                    corrupt_backup = f"{DATA_FILE}.corrupt.{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                    shutil.copy(DATA_FILE, corrupt_backup)
+                    logger.info(f"✅ Backup do arquivo corrompido criado: {corrupt_backup}")
+                except Exception as backup_error:
+                    logger.error(f"❌ Falha ao criar backup do arquivo corrompido: {str(backup_error)}")
+                
+                # Tenta baixar novamente do Drive
+                logger.info("ℹ️ Tentando baixar versão válida do Drive")
+                if drive_service.download_file(DATA_FILE, DATA_FILE):
+                    return load_data()  # Recursão com cuidado
+                
+                # Se não conseguir, cria novo arquivo
+                logger.info("ℹ️ Criando novo arquivo de dados vazio")
+                with open(DATA_FILE, 'w', encoding='utf-8') as new_file:
+                    json.dump({}, new_file)
                 return {}
                 
-            data = json.loads(content)
-            if not validate_data_structure(data):
-                raise ValueError("Estrutura de dados inválida")
-            return data
-            
-    except json.JSONDecodeError as e:
-        logger.error(f"❌ JSON inválido: {str(e)}")
-        backup_data()  # Faz backup do arquivo corrompido
-        return {}
     except Exception as e:
-        logger.error(f"❌ Erro ao carregar dados: {str(e)}")
+        logger.error(f"❌ Erro crítico ao carregar dados: {str(e)}")
+        # Cria arquivo vazio como fallback
+        try:
+            with open(DATA_FILE, 'w', encoding='utf-8') as f:
+                json.dump({}, f)
+        except Exception as fallback_error:
+            logger.error(f"❌ Falha ao criar arquivo fallback: {str(fallback_error)}")
         return {}
 
 def save_data(data):
