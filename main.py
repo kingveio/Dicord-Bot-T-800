@@ -243,17 +243,18 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
         max_length=25
     )
     
-    # Mudamos para UserSelect para melhor experiência de usuário
-    discord_member = ui.UserSelect(
-        label="Membro do Discord",
-        placeholder="Selecione um usuário...",
-        max_values=1
+    discord_id = ui.TextInput(
+        label="ID do Membro do Discord",
+        placeholder="Digite o ID do usuário ou mencione (@usuário)",
+        min_length=17,
+        max_length=20
     )
 
     async def on_submit(self, interaction: discord.Interaction):
         """Processa o formulário quando enviado"""
         try:
             twitch_username = self.twitch_name.value.lower().strip()
+            discord_input = self.discord_id.value.strip()
             
             # Validação do nome Twitch
             if not re.match(r'^[a-zA-Z0-9_]{3,25}$', twitch_username):
@@ -271,17 +272,35 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
                 )
                 return
 
-            # Obtém o membro selecionado
-            member = self.discord_member.values[0]
-            
-            # Carrega e atualiza os dados
+            # Extrai o ID do Discord (suporta menção ou ID direto)
+            discord_id = None
+            if discord_input.startswith('<@') and discord_input.endswith('>'):  # É uma menção
+                discord_id = ''.join(c for c in discord_input if c.isdigit())
+            elif discord_input.isdigit():  # É um ID direto
+                discord_id = discord_input
+            else:
+                await interaction.response.send_message(
+                    "❌ Formato inválido! Use o ID do usuário ou mencione (@usuário)",
+                    ephemeral=True
+                )
+                return
+
+            # Verifica se o usuário existe no servidor
+            member = interaction.guild.get_member(int(discord_id))
+            if not member:
+                await interaction.response.send_message(
+                    "❌ Usuário não encontrado no servidor! Verifique o ID.",
+                    ephemeral=True
+                )
+                return
+
+            # Restante do código de salvamento...
             data = load_data()
             guild_id = str(interaction.guild.id)
 
             if guild_id not in data:
                 data[guild_id] = {}
 
-            # Verifica se já existe vinculação
             if twitch_username in data[guild_id]:
                 existing_user = data[guild_id][twitch_username]
                 await interaction.response.send_message(
@@ -290,7 +309,6 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
                 )
                 return
 
-            # Salva o novo streamer
             data[guild_id][twitch_username] = str(member.id)
             save_data(data)
 
@@ -447,7 +465,7 @@ async def check_streams():
                                 try:
                                     await channel.send(
                                         f"🎥 {member.mention} está ao vivo na Twitch como `{twitch_user}`!",
-                                        allowed_mentions=discord.AllowedMentions(users=True)
+                                        allowed_mentions=discord.AllowedMentions(users=True))
                                 except Exception as e:
                                     logger.error(f"Erro ao enviar mensagem em {guild.name}: {e}")
                             
