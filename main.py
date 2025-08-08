@@ -11,7 +11,6 @@ import logging
 from datetime import datetime, timedelta
 from flask import Flask
 from threading import Thread
-import requests
 
 # ========== CONFIGURAÇÃO INICIAL ==========
 print("╔════════════════════════════════════════════╗")
@@ -40,37 +39,24 @@ TOKEN = os.environ["DISCORD_TOKEN"]
 TWITCH_CLIENT_ID = os.environ["TWITCH_CLIENT_ID"]
 TWITCH_SECRET = os.environ["TWITCH_CLIENT_SECRET"]
 DATA_FILE = "streamers.json"
-CHECK_INTERVAL = 60  # segundos
+CHECK_INTERVAL = 55  # Verificação a cada 55 segundos
 
 # ========== SERVIDOR FLASK (Keep-Alive) ==========
 app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "🤖 Bot Twitch Online! Mantido por Flask + UptimeRobot."
+    return "🤖 Bot Twitch Online! Mantido por Flask no Render."
 
 def run_flask():
     app.run(host="0.0.0.0", port=8080)
 
 def start_keepalive():
-    """Inicia o servidor Flask e o ping automático."""
+    """Inicia o servidor Flask para manter o bot online."""
     flask_thread = Thread(target=run_flask)
     flask_thread.daemon = True
     flask_thread.start()
-
-    # Se estiver no Replit, ativa ping automático
-    if "REPLIT" in os.environ:
-        def auto_ping():
-            while True:
-                try:
-                    url = f"https://{os.environ['REPL_SLUG']}.{os.environ['REPL_OWNER']}.repl.co"
-                    requests.get(url, timeout=5)
-                    logging.info("🔄 Ping automático (manter online)")
-                except Exception as e:
-                    logging.error("⚠️ Falha no ping: %s", e)
-                time.sleep(300)  # Ping a cada 5 minutos
-
-        Thread(target=auto_ping, daemon=True).start()
+    logging.info("✅ Servidor Flask iniciado para keep-alive")
 
 # ========== INICIALIZAÇÃO DO BOT ==========
 intents = discord.Intents.default()
@@ -82,7 +68,7 @@ bot = commands.Bot(
     intents=intents,
     activity=discord.Activity(
         type=discord.ActivityType.watching,
-        name="Exterminador do Futuro 2"
+        name="transmissões na Twitch"
     )
 )
 
@@ -172,7 +158,7 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
             twitch_username = self.twitch_name.value.lower().strip()
             member_input = self.discord_member.value.strip()
 
-            # Extrai ID do Discord (menção, ID ou nome)
+            # Extrai ID do Discord
             if member_input.startswith("<@") and member_input.endswith(">"):
                 discord_id = "".join(c for c in member_input if c.isdigit())
             elif member_input.isdigit() and len(member_input) >= 17:
@@ -388,12 +374,12 @@ async def on_ready():
 
 # ========== INICIAR O BOT ==========
 if __name__ == "__main__":
-    start_keepalive()  # Ativa o keep-alive (Flask + ping automático)
+    start_keepalive()
 
     # Tenta reconectar automaticamente em caso de falha
     while True:
         try:
             bot.run(TOKEN)
         except Exception as e:
-            logging.error(f"⚠️ Bot caiu: {e}. Reconectando em 60 segundos...")
-            time.sleep(40)
+            logging.error(f"⚠️ Bot caiu: {e}. Reconectando em {CHECK_INTERVAL} segundos...")
+            time.sleep(CHECK_INTERVAL)
