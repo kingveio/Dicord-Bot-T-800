@@ -311,7 +311,7 @@ bot = commands.Bot(
     intents=intents,
     activity=discord.Activity(
         type=discord.ActivityType.watching,
-        name="Streamers da Twitch"
+        name="Exterminador do futuro 2"
     )
 )
 
