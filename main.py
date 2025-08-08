@@ -1,4 +1,3 @@
-# [CÓDIGO COMPLETO COM GOOGLE DRIVE INTEGRADO]
 import discord
 from discord.ext import commands
 from discord import app_commands, ui
@@ -11,6 +10,7 @@ import time
 import logging
 import threading
 import re
+import shutil
 from datetime import datetime, timedelta
 from flask import Flask, jsonify
 import requests
@@ -24,6 +24,7 @@ print("╔═══════════════════════�
 print("║       BOT DE NOTIFICAÇÕES DA TWITCH        ║")
 print("╚════════════════════════════════════════════╝")
 
+# Configuração de logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -38,7 +39,7 @@ logger = logging.getLogger(__name__)
 REQUIRED_ENV = [
     "DISCORD_TOKEN", 
     "TWITCH_CLIENT_ID", 
-    "TWITCH_CLIENT_SECRET", 
+    "TWITCH_CLIENT_SECRET",
     "DRIVE_FOLDER_ID",
     "DRIVE_PRIVATE_KEY_ID",
     "DRIVE_PRIVATE_KEY",
@@ -140,23 +141,82 @@ class GoogleDriveService:
 drive_service = GoogleDriveService()
 
 # ========== GERENCIAMENTO DE DADOS ==========
-def load_data():
+def validate_data_structure(data):
+    """Valida a estrutura dos dados"""
+    if not isinstance(data, dict):
+        return False
+    for guild_id, streamers in data.items():
+        if not isinstance(guild_id, str) or not isinstance(streamers, dict):
+            return False
+        for twitch_user, discord_id in streamers.items():
+            if not isinstance(twitch_user, str) or not isinstance(discord_id, str):
+                return False
+    return True
+
+def backup_data():
+    """Cria backup dos dados"""
     try:
-        if drive_service.download_file(DATA_FILE, DATA_FILE):
-            with open(DATA_FILE, 'r') as f:
-                return json.load(f)
+        if os.path.exists(DATA_FILE):
+            backup_dir = "backups"
+            os.makedirs(backup_dir, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_file = os.path.join(backup_dir, f"{DATA_FILE}.{timestamp}")
+            shutil.copy(DATA_FILE, backup_file)
+            logger.info(f"✅ Backup criado: {backup_file}")
+    except Exception as e:
+        logger.error(f"❌ Erro no backup: {str(e)}")
+
+def load_data():
+    """Carrega dados com tratamento robusto de erros"""
+    try:
+        # Tenta baixar do Drive primeiro
+        if not drive_service.download_file(DATA_FILE, DATA_FILE):
+            logger.warning("⚠️ Arquivo não encontrado no Drive, usando local")
+        
+        # Verifica se o arquivo existe localmente
+        if not os.path.exists(DATA_FILE):
+            logger.info("ℹ️ Criando novo arquivo de dados")
+            return {}
+            
+        # Lê e valida o conteúdo
+        with open(DATA_FILE, 'r', encoding='utf-8') as f:
+            content = f.read().strip()
+            if not content:
+                logger.warning("⚠️ Arquivo vazio, retornando dados padrão")
+                return {}
+                
+            data = json.loads(content)
+            if not validate_data_structure(data):
+                raise ValueError("Estrutura de dados inválida")
+            return data
+            
+    except json.JSONDecodeError as e:
+        logger.error(f"❌ JSON inválido: {str(e)}")
+        backup_data()  # Faz backup do arquivo corrompido
         return {}
     except Exception as e:
-        logger.error(f"Erro ao carregar dados: {str(e)}")
+        logger.error(f"❌ Erro ao carregar dados: {str(e)}")
         return {}
 
 def save_data(data):
+    """Salva dados com validação completa"""
     try:
-        with open(DATA_FILE, 'w') as f:
-            json.dump(data, f, indent=2)
-        drive_service.upload_file(DATA_FILE, DATA_FILE)
+        if not validate_data_structure(data):
+            raise ValueError("Dados não passaram na validação de estrutura")
+            
+        backup_data()  # Faz backup antes de salvar
+        
+        # Salva localmente
+        with open(DATA_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            
+        # Envia para o Drive
+        if not drive_service.upload_file(DATA_FILE, DATA_FILE):
+            logger.error("❌ Falha ao enviar para o Google Drive")
+            
     except Exception as e:
-        logger.error(f"Erro ao salvar dados: {str(e)}")
+        logger.error(f"❌ Erro crítico ao salvar dados: {str(e)}")
+        raise
 
 # ========== TWITCH API ==========
 class TwitchAPI:
@@ -251,7 +311,7 @@ bot = commands.Bot(
     intents=intents,
     activity=discord.Activity(
         type=discord.ActivityType.watching,
-        name="Exterminador do Futuro 2"
+        name="Streamers da Twitch"
     )
 )
 
@@ -503,22 +563,30 @@ async def check_streams():
 async def on_ready():
     logger.info(f"✅ Bot conectado como {bot.user.name}")
     
-    # Teste de conexão com o Drive
-    test_data = {"test": datetime.now().isoformat()}
-    with open(DATA_FILE, 'w') as f:
-        json.dump(test_data, f)
-    
-    if drive_service.upload_file(DATA_FILE, DATA_FILE):
-        logger.info("✅ Conexão com Google Drive estabelecida!")
-    else:
-        logger.error("❌ Falha na conexão com Google Drive!")
-    
-    os.remove(DATA_FILE)
-    
+    # Verificação inicial do sistema de dados
+    try:
+        test_data = load_data()
+        if not isinstance(test_data, dict):
+            logger.error("❌ Dados inválidos detectados, resetando...")
+            save_data({})
+        logger.info("✅ Sistema de dados verificado")
+    except Exception as e:
+        logger.error(f"❌ Falha crítica na verificação de dados: {e}")
+        save_data({})  # Força reset
+
     # Sincroniza comandos e inicia tasks
-    await bot.tree.sync()
-    bot.loop.create_task(check_streams())
+    try:
+        await bot.tree.sync()
+        bot.loop.create_task(check_streams())
+        logger.info("✅ Comandos sincronizados e tasks iniciadas")
+    except Exception as e:
+        logger.error(f"❌ Falha ao iniciar tasks: {e}")
 
 # ========== INICIALIZAÇÃO ==========
 if __name__ == '__main__':
+    # Cria arquivo de dados inicial se não existir
+    if not os.path.exists(DATA_FILE):
+        save_data({})
+    
+    # Inicia o bot
     bot.run(TOKEN)
