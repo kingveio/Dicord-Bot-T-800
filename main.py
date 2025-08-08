@@ -90,7 +90,7 @@ bot = commands.Bot(
     intents=intents,
     activity=discord.Activity(
         type=discord.ActivityType.watching,
-        name="Exterminador do Futuro 2"
+        name="transmissões na Twitch"
     )
 )
 
@@ -174,32 +174,52 @@ class TwitchAPI:
 
 twitch_api = TwitchAPI()
 
-# ========== DISCORD MODAL ==========
+# ========== DISCORD MODAL (COM MELHORIAS DE MENCÃO) ==========
 class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
-    twitch_name = ui.TextInput(label="Nome na Twitch", placeholder="ex: xqc", min_length=3)
-    discord_member = ui.TextInput(label="Membro do Discord", placeholder="@usuário ou ID")
+    twitch_name = ui.TextInput(
+        label="Nome na Twitch",
+        placeholder="ex: alanzoka",
+        min_length=3,
+        max_length=25
+    )
+    discord_member = ui.TextInput(
+        label="Membro do Discord (marque com @)",
+        placeholder="@usuário",
+        min_length=20,
+        max_length=30
+    )
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
             twitch_username = self.twitch_name.value.lower().strip()
             member_input = self.discord_member.value.strip()
 
-            if member_input.startswith("<@") and member_input.endswith(">"):
-                discord_id = "".join(c for c in member_input if c.isdigit())
-            elif member_input.isdigit() and len(member_input) >= 17:
-                discord_id = member_input
-            else:
-                member_found = None
-                async for member in interaction.guild.fetch_members(limit=None):
-                    if (member_input.lower() in member.name.lower() or
-                        member_input.lower() in (member.display_name or "").lower()):
-                        member_found = member
-                        break
+            # Validação rigorosa da menção
+            if not (member_input.startswith('<@') and member_input.endswith('>')):
+                await interaction.response.send_message(
+                    "❌ **Formato inválido!** Você deve marcar o usuário com @ no campo de membro",
+                    ephemeral=True
+                )
+                return
 
-                if not member_found:
-                    raise ValueError("Membro não encontrado")
-                discord_id = str(member_found.id)
+            discord_id = "".join(c for c in member_input if c.isdigit())
+            
+            if len(discord_id) < 17:
+                await interaction.response.send_message(
+                    "❌ **ID inválido!** Marque um usuário válido com @",
+                    ephemeral=True
+                )
+                return
 
+            member = interaction.guild.get_member(int(discord_id))
+            if not member:
+                await interaction.response.send_message(
+                    "❌ **Membro não encontrado!** Verifique se o usuário está no servidor",
+                    ephemeral=True
+                )
+                return
+
+            # Verifica se já existe
             data = load_data()
             guild_id = str(interaction.guild.id)
 
@@ -208,7 +228,7 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
 
             if twitch_username in data[guild_id]:
                 await interaction.response.send_message(
-                    f"⚠️ {twitch_username} já está vinculado a <@{data[guild_id][twitch_username]}>",
+                    f"⚠️ `{twitch_username}` já está vinculado a <@{data[guild_id][twitch_username]}>",
                     ephemeral=True
                 )
                 return
@@ -217,18 +237,18 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
             save_data(data)
 
             await interaction.response.send_message(
-                f"✅ <@{discord_id}> vinculado à Twitch: {twitch_username}",
+                f"✅ {member.mention} vinculado à Twitch: `{twitch_username}`",
                 ephemeral=True
             )
 
         except Exception as e:
             logging.error("Erro ao adicionar streamer: %s", e)
             await interaction.response.send_message(
-                f"❌ Erro: {str(e)}",
+                f"❌ **Erro:** {str(e)}",
                 ephemeral=True
             )
 
-# ========== DISCORD VIEW ==========
+# ========== DISCORD VIEW (COM MENCÕES MELHORADAS) ==========
 class StreamersView(ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -248,18 +268,24 @@ class StreamersView(ui.View):
 
         select = ui.Select(placeholder="Selecione um streamer para remover...")
         for streamer in guild_streamers:
-            select.add_option(label=streamer)
+            member = interaction.guild.get_member(int(guild_streamers[streamer]))
+            select.add_option(
+                label=f"{streamer}",
+                description=f"Vinculado a: {member.display_name if member else 'Não encontrado'}",
+                value=streamer
+            )
 
         async def callback(interaction: discord.Interaction):
             data = load_data()
             guild_id = str(interaction.guild.id)
 
             if guild_id in data and select.values[0] in data[guild_id]:
-                removed = select.values[0]
-                del data[guild_id][removed]
+                removed_user = select.values[0]
+                member = interaction.guild.get_member(int(data[guild_id][removed_user]))
+                del data[guild_id][removed_user]
                 save_data(data)
                 await interaction.response.send_message(
-                    f"✅ Removido: {removed}",
+                    f"✅ Removido: `{removed_user}` (vinculado a {member.mention if member else 'usuário desconhecido'})",
                     ephemeral=True
                 )
 
@@ -282,7 +308,7 @@ class StreamersView(ui.View):
             member = interaction.guild.get_member(int(discord_id))
             embed.add_field(
                 name=f"🔹 {twitch_user}",
-                value=f"Discord: {member.mention if member else 'Não encontrado'}",
+                value=f"Discord: {member.mention if member else '🚨 Usuário não encontrado'}",
                 inline=False
             )
 
@@ -331,6 +357,15 @@ async def check_streams():
                         if is_live and not has_role:
                             await member.add_roles(live_role)
                             logging.info(f"➕ Cargo adicionado para {member} ({twitch_user})")
+                            
+                            # Opcional: Envia mensagem de notificação
+                            channel = guild.system_channel
+                            if channel and channel.permissions_for(guild.me).send_messages:
+                                await channel.send(
+                                    f"🎥 {member.mention} está ao vivo na Twitch como `{twitch_user}`!",
+                                    allowed_mentions=discord.AllowedMentions(users=True)
+                                )
+                            
                         elif not is_live and has_role:
                             await member.remove_roles(live_role)
                             logging.info(f"➖ Cargo removido de {member} ({twitch_user})")
