@@ -17,6 +17,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 import io
 
+os.environ['DISABLE_VOICE'] = 'true'  # Desativa módulos de voz
 # ========== CONFIGURAÇÃO INICIAL ==========
 print("╔════════════════════════════════════════════╗")
 print("║       BOT DE NOTIFICAÇÕES DA TWITCH        ║")
