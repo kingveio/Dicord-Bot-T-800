@@ -1,6 +1,6 @@
 discord.py==2.3.2
 google-api-python-client==2.104.0
 Flask==2.3.2
-aiohttp==3.8.6
+aiohttp==3.8.6 --prefer-binary
 PyNaCl==1.5.0
 gunicorn==21.2.0
