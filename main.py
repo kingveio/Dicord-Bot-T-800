@@ -13,7 +13,6 @@ import re
 import shutil
 from datetime import datetime, timedelta
 from flask import Flask, jsonify
-import requests
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
@@ -59,6 +58,20 @@ DRIVE_FOLDER_ID = os.environ["DRIVE_FOLDER_ID"]
 DATA_FILE = "streamers.json"
 CHECK_INTERVAL = 55
 START_TIME = datetime.now()
+
+# ========== SERVIÇO WEB PARA HEALTH CHECKS ==========
+app = Flask(__name__)
+
+@app.route('/')
+def health_check():
+    return jsonify({
+        "status": "online",
+        "uptime": str(datetime.now() - START_TIME),
+        "bot": "running"
+    }), 200
+
+def run_flask():
+    app.run(host='0.0.0.0', port=8080)
 
 # ========== SERVIÇO DO GOOGLE DRIVE ==========
 class GoogleDriveService:
@@ -223,6 +236,8 @@ class TwitchAPI:
     def __init__(self):
         self.token = None
         self.token_expiry = None
+        self.user_cache = {}
+        self.cache_expiry = timedelta(hours=1)
 
     async def get_token(self, retries=3):
         for attempt in range(retries):
@@ -249,6 +264,17 @@ class TwitchAPI:
         return None
 
     async def validate_streamer(self, username):
+        username = username.lower()
+        if username in self.user_cache:
+            cached_time, is_valid = self.user_cache[username]
+            if datetime.now() - cached_time < self.cache_expiry:
+                return is_valid
+        
+        is_valid = await self._validate_streamer_api(username)
+        self.user_cache[username] = (datetime.now(), is_valid)
+        return is_valid
+
+    async def _validate_streamer_api(self, username):
         token = await self.get_token()
         if not token:
             return False
@@ -311,7 +337,7 @@ bot = commands.Bot(
     intents=intents,
     activity=discord.Activity(
         type=discord.ActivityType.watching,
-        name="Exterminador do futuro 2"
+        name="Exterminador do Futuro 2"
     )
 )
 
@@ -494,6 +520,19 @@ async def streamers_command(interaction: discord.Interaction):
         ephemeral=True
     )
 
+@bot.tree.command(name="status", description="Verifica o status do bot")
+async def status_command(interaction: discord.Interaction):
+    uptime = datetime.now() - START_TIME
+    data = load_data()
+    total_streamers = sum(len(g) for g in data.values())
+    
+    embed = discord.Embed(title="🤖 Status do Bot", color=0x00FF00)
+    embed.add_field(name="⏱ Uptime", value=str(uptime).split('.')[0], inline=False)
+    embed.add_field(name="📊 Streamers monitorados", value=f"{total_streamers} em {len(data)} servidores", inline=False)
+    embed.add_field(name="🔄 Última verificação", value=datetime.now().strftime("%H:%M:%S"), inline=False)
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
 # ========== VERIFICAÇÃO DE LIVES ==========
 async def check_streams():
     while True:
@@ -583,10 +622,19 @@ async def on_ready():
         logger.error(f"❌ Falha ao iniciar tasks: {e}")
 
 # ========== INICIALIZAÇÃO ==========
-if __name__ == '__main__':
+def run_bot():
     # Cria arquivo de dados inicial se não existir
     if not os.path.exists(DATA_FILE):
         save_data({})
     
     # Inicia o bot
     bot.run(TOKEN)
+
+if __name__ == '__main__':
+    # Inicia o servidor Flask em uma thread separada
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+    
+    # Inicia o bot Discord
+    run_bot()
