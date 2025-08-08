@@ -66,7 +66,7 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
 
 class StreamersView(ui.View):
     # ... (código da view) ...
-    @ui.button(label="Remover", ...)
+   @ui.button(label="Remover", style=discord.ButtonStyle.red, emoji="➖", custom_id="remove_streamer")
     async def remove_streamer(self, interaction: discord.Interaction, button: ui.Button):
         # ... (código do callback com alteração para usar set_cached_data) ...
         async def callback(inner_interaction: discord.Interaction):
