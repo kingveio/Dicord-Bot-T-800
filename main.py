@@ -18,7 +18,6 @@ print("╔═══════════════════════�
 print("║       BOT DE NOTIFICAÇÕES DA TWITCH        ║")
 print("╚════════════════════════════════════════════╝")
 
-# Configuração de logs (salva em arquivo e mostra no console)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
