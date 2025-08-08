@@ -8,9 +8,10 @@ import os
 import sys
 import time
 import logging
+import threading
 from datetime import datetime, timedelta
-from flask import Flask
-from threading import Thread
+from flask import Flask, jsonify
+import requests
 
 # ========== CONFIGURAÇÃO INICIAL ==========
 print("╔════════════════════════════════════════════╗")
@@ -26,12 +27,12 @@ logging.basicConfig(
     ]
 )
 
-# Verifica variáveis de ambiente necessárias
+# Verifica variáveis de ambiente
 REQUIRED_ENV = ["DISCORD_TOKEN", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET"]
 missing = [var for var in REQUIRED_ENV if var not in os.environ]
 
 if missing:
-    logging.error("❌ Variáveis de ambiente faltando: %s", missing)
+    logging.error("❌ Variáveis faltando: %s", missing)
     sys.exit(1)
 
 # Configurações
@@ -40,23 +41,37 @@ TWITCH_CLIENT_ID = os.environ["TWITCH_CLIENT_ID"]
 TWITCH_SECRET = os.environ["TWITCH_CLIENT_SECRET"]
 DATA_FILE = "streamers.json"
 CHECK_INTERVAL = 55  # Verificação a cada 55 segundos
+START_TIME = datetime.now()
 
-# ========== SERVIDOR FLASK (Keep-Alive) ==========
+# ========== SERVIDOR FLASK ==========
 app = Flask(__name__)
 
-@app.route("/")
+@app.route('/')
 def home():
-    return "🤖 Bot Twitch Online! Mantido por Flask no Render."
+    return "🤖 Bot Twitch Online! Use /ping para status."
+
+@app.route('/ping')
+def ping():
+    bot_status = bot.is_ready() if 'bot' in globals() else False
+    return jsonify({
+        "status": "online",
+        "bot_connected": bot_status,
+        "uptime": str(datetime.now() - START_TIME),
+        "timestamp": datetime.now().isoformat()
+    }), 200
+
+@app.route('/status')
+def status():
+    data = {
+        "status": "online",
+        "guilds": len(bot.guilds) if 'bot' in globals() and bot.is_ready() else 0,
+        "streamers": sum(len(v) for v in load_data().values()),
+        "last_check": getattr(bot, '_last_check', 'N/A')
+    }
+    return jsonify(data), 200
 
 def run_flask():
-    app.run(host="0.0.0.0", port=8080)
-
-def start_keepalive():
-    """Inicia o servidor Flask para manter o bot online."""
-    flask_thread = Thread(target=run_flask)
-    flask_thread.daemon = True
-    flask_thread.start()
-    logging.info("✅ Servidor Flask iniciado para keep-alive")
+    app.run(host='0.0.0.0', port=8080, threaded=True, use_reloader=False)
 
 # ========== INICIALIZAÇÃO DO BOT ==========
 intents = discord.Intents.default()
@@ -68,7 +83,7 @@ bot = commands.Bot(
     intents=intents,
     activity=discord.Activity(
         type=discord.ActivityType.watching,
-        name="Exterminador do Futuro 2"
+        name="transmissões na Twitch"
     )
 )
 
@@ -141,6 +156,7 @@ class TwitchAPI:
                         return set()
 
                     data = await response.json()
+                    bot._last_check = datetime.now().isoformat()
                     return {s["user_login"].lower() for s in data.get("data", [])}
         except Exception as e:
             logging.error("Erro ao verificar streams: %s", e)
@@ -158,13 +174,11 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
             twitch_username = self.twitch_name.value.lower().strip()
             member_input = self.discord_member.value.strip()
 
-            # Extrai ID do Discord
             if member_input.startswith("<@") and member_input.endswith(">"):
                 discord_id = "".join(c for c in member_input if c.isdigit())
             elif member_input.isdigit() and len(member_input) >= 17:
                 discord_id = member_input
             else:
-                # Busca por nome/nick
                 member_found = None
                 async for member in interaction.guild.fetch_members(limit=None):
                     if (member_input.lower() in member.name.lower() or
@@ -176,7 +190,6 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
                     raise ValueError("Membro não encontrado")
                 discord_id = str(member_found.id)
 
-            # Verifica se já existe
             data = load_data()
             guild_id = str(interaction.guild.id)
 
@@ -282,6 +295,9 @@ async def check_streams():
                 await asyncio.sleep(CHECK_INTERVAL)
                 continue
 
+            if len(all_streamers) > 15:  # Delay para muitos streamers
+                await asyncio.sleep(5)
+
             live_streamers = await twitch_api.check_live_streams(all_streamers)
 
             for guild_id, streamers in data.items():
@@ -316,6 +332,29 @@ async def check_streams():
 
         await asyncio.sleep(CHECK_INTERVAL)
 
+# ========== SISTEMA DE PING ==========
+async def auto_pinger():
+    while True:
+        try:
+            # Ping interno
+            async with aiohttp.ClientSession() as session:
+                async with session.get('http://localhost:8080/ping', timeout=10) as resp:
+                    if resp.status == 200:
+                        logging.debug("🔄 Ping interno realizado")
+                    else:
+                        logging.warning("⚠️ Ping interno falhou")
+
+            # Ping externo (apenas se URL estiver configurada)
+            if 'RENDER_EXTERNAL_URL' in os.environ:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(f"{os.environ['RENDER_EXTERNAL_URL']}/ping", timeout=10) as resp:
+                        if resp.status == 200:
+                            logging.debug("🌐 Ping externo realizado")
+        except Exception as e:
+            logging.error(f"🚨 Erro no pinger: {str(e)}")
+        
+        await asyncio.sleep(300)  # A cada 5 minutos
+
 # ========== COMANDOS SLASH ==========
 @bot.tree.command(name="streamers", description="Gerenciar notificações de streamers")
 @app_commands.default_permissions(manage_guild=True)
@@ -330,17 +369,17 @@ async def streamers_command(interaction: discord.Interaction):
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def sync(ctx: commands.Context):
-    """Sincroniza comandos slash (apenas admins)"""
+    """Sincroniza comandos slash"""
     try:
-        await bot.tree.sync(guild=ctx.guild)
-        await ctx.send("✅ Comandos sincronizados!")
+        synced = await bot.tree.sync(guild=ctx.guild)
+        await ctx.send(f"✅ {len(synced)} comandos sincronizados!")
     except Exception as e:
         await ctx.send(f"❌ Erro: {e}")
 
 @bot.command()
 @commands.has_permissions(manage_guild=True)
 async def setup(ctx: commands.Context):
-    """Configura o cargo 'Ao Vivo' (apenas mods)"""
+    """Configura o cargo 'Ao Vivo'"""
     live_role = discord.utils.get(ctx.guild.roles, name="Ao Vivo")
     if not live_role:
         try:
@@ -359,27 +398,30 @@ async def setup(ctx: commands.Context):
 # ========== EVENTOS ==========
 @bot.event
 async def on_ready():
-    logging.info(f"✅ Bot conectado como {bot.user.name} (ID: {bot.user.id})")
+    logging.info(f"✅ Bot conectado como {bot.user} (ID: {bot.user.id})")
     logging.info(f"🌐 Servidores: {len(bot.guilds)}")
 
-    # Inicia a verificação de streams
+    # Inicia serviços
     bot.loop.create_task(check_streams())
+    bot.loop.create_task(auto_pinger())
 
-    # Sincroniza comandos slash
     try:
-        await bot.tree.sync()
-        logging.info("🔗 Comandos slash sincronizados")
+        synced = await bot.tree.sync()
+        logging.info(f"🔗 {len(synced)} comandos slash sincronizados")
     except Exception as e:
         logging.error(f"⚠️ Erro ao sincronizar comandos: {e}")
 
-# ========== INICIAR O BOT ==========
+# ========== INICIALIZAÇÃO ==========
 if __name__ == "__main__":
-    start_keepalive()
+    # Inicia o Flask em thread separada
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    logging.info("🔥 Servidor Flask iniciado")
 
-    # Tenta reconectar automaticamente em caso de falha
+    # Mantém o bot rodando com reinício automático
     while True:
         try:
             bot.run(TOKEN)
         except Exception as e:
-            logging.error(f"⚠️ Bot caiu: {e}. Reconectando em {CHECK_INTERVAL} segundos...")
-            time.sleep(CHECK_INTERVAL)
+            logging.error(f"🚨 Bot caiu: {e}. Reconectando em 30s...")
+            time.sleep(30)
