@@ -321,6 +321,9 @@ async def on_ready():
     logger.info(f"📊 Conectado em {len(bot.guilds)} servidores")
     
     try:
+        # Inicializa as views persistentes
+        bot.add_view(StreamersView())
+        
         synced = await bot.tree.sync()
         logger.info(f"🔄 {len(synced)} comandos slash sincronizados")
     except Exception as e:
@@ -348,13 +351,23 @@ async def on_command_error(ctx, error):
         logger.error(f"Erro no comando {ctx.command}: {str(error)}")
 
 # --------------------------------------------------------------------------
-# Inicialização
+# Funções de Cache (Placeholder - implemente conforme necessário)
 # --------------------------------------------------------------------------
 
-def setup():
-    """Configuração inicial"""
-    bot.add_view(StreamersView())  # Para persistência de views
-    logger.info("🛠️ Configuração inicial concluída")
+async def get_cached_data() -> Dict:
+    """Obtém os dados em cache"""
+    # Implemente sua lógica de cache aqui
+    return {"streamers": {}}
 
-# Executa a configuração quando o arquivo é carregado
-setup()
+async def set_cached_data(data: Dict, drive_service, persist: bool = False) -> None:
+    """Atualiza os dados em cache"""
+    # Implemente sua lógica de cache aqui
+    pass
+
+# --------------------------------------------------------------------------
+# Inicialização do Bot
+# --------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    # Inicializa o bot
+    bot.run(os.getenv("DISCORD_TOKEN"))
