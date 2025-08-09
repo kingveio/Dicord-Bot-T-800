@@ -1,7 +1,6 @@
 import os
 import json
 import asyncio
-import aiofiles
 import logging
 from typing import Dict, Any, Optional, TYPE_CHECKING
 
@@ -10,7 +9,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Estrutura global de dados
+# Fallback para quando aiofiles não estiver disponível
+try:
+    import aiofiles
+    USE_AIOFILES = True
+except ImportError:
+    USE_AIOFILES = False
+    logger.warning("aiofiles não disponível - usando operações de arquivo síncronas")
+
 DATA_CACHE = {
     "streamers": {},
     "youtube_channels": {}
@@ -18,115 +24,76 @@ DATA_CACHE = {
 DATA_LOCK = asyncio.Lock()
 DATA_FILE = "streamers.json"
 
-def validate_data_structure_sync(data: Dict[str, Any]) -> bool:
-    """Valida a estrutura do arquivo de dados"""
-    if not isinstance(data, dict):
-        return False
-    
-    required_sections = {"streamers", "youtube_channels"}
-    if not all(section in data for section in required_sections):
+def validate_data_structure(data: Dict[str, Any]) -> bool:
+    """Valida a estrutura básica dos dados"""
+    try:
+        return all(k in data for k in ["streamers", "youtube_channels"])
+    except Exception:
         return False
 
-    # Valida estrutura dos streamers da Twitch
-    if not all(
-        isinstance(guild_id, str) and isinstance(streamers, dict)
-        for guild_id, streamers in data["streamers"].items()
-    ):
-        return False
-
-    # Valida estrutura dos canais do YouTube
-    if not all(
-        isinstance(guild_id, str) and isinstance(channels, dict)
-        for guild_id, channels in data["youtube_channels"].items()
-    ):
-        return False
-
-    return True
-
-async def load_data_from_drive_if_exists(drive_service: 'GoogleDriveService') -> None:
-    """Carrega dados do Google Drive ou cria novo arquivo se não existir"""
+async def load_data_from_drive_if_exists(drive_service: Optional['GoogleDriveService'] = None) -> None:
+    """Carrega dados do Drive ou arquivo local"""
     global DATA_CACHE
     
-    async with DATA_LOCK:
+    async def load_from_file(file_path: str) -> bool:
         try:
-            # Tenta carregar do Google Drive
-            if drive_service and await asyncio.to_thread(drive_service.download_file, DATA_FILE, DATA_FILE):
-                async with aiofiles.open(DATA_FILE, 'r', encoding='utf-8') as f:
-                    data = json.loads(await f.read())
-                    if validate_data_structure_sync(data):
-                        DATA_CACHE = data
-                        logger.info("✅ Dados carregados do Google Drive")
-                        return
-                    else:
-                        logger.warning("⚠️ Dados do Drive inválidos")
-
-            # Fallback para arquivo local
-            if os.path.exists(DATA_FILE):
-                async with aiofiles.open(DATA_FILE, 'r', encoding='utf-8') as f:
-                    data = json.loads(await f.read())
-                    if validate_data_structure_sync(data):
-                        DATA_CACHE = data
-                        logger.info("ℹ️ Dados carregados do arquivo local")
-                        return
-
-            # Cria nova estrutura se não existir
-            DATA_CACHE = {"streamers": {}, "youtube_channels": {}}
-            logger.info("ℹ️ Nova estrutura de dados criada")
+            if USE_AIOFILES:
+                async with aiofiles.open(file_path, 'r') as f:
+                    content = await f.read()
+            else:
+                with open(file_path, 'r') as f:
+                    content = f.read()
             
+            data = json.loads(content)
+            if validate_data_structure(data):
+                DATA_CACHE.update(data)
+                return True
         except Exception as e:
-            logger.error(f"❌ Falha ao carregar dados: {str(e)}")
-            DATA_CACHE = {"streamers": {}, "youtube_channels": {}}
+            logger.error(f"Erro ao carregar {file_path}: {str(e)}")
+        return False
 
-async def save_data_to_drive(data: Dict[str, Any], drive_service: 'GoogleDriveService') -> None:
-    """Salva dados localmente e no Google Drive"""
-    global DATA_CACHE
-    
-    async with DATA_LOCK:
-        if not validate_data_structure_sync(data):
-            logger.error("❌ Tentativa de salvar dados inválidos")
-            raise ValueError("Estrutura de dados inválida")
+    try:
+        # 1. Tenta carregar do Google Drive
+        if drive_service:
+            if await asyncio.to_thread(drive_service.download_file, DATA_FILE, DATA_FILE):
+                if await load_from_file(DATA_FILE):
+                    logger.info("Dados carregados do Google Drive")
+                    return
 
-        try:
-            # Salva localmente
-            async with aiofiles.open(DATA_FILE, 'w', encoding='utf-8') as f:
-                await f.write(json.dumps(data, indent=2, ensure_ascii=False))
-            
-            # Envia para o Google Drive
-            if drive_service:
-                file_id = await asyncio.to_thread(drive_service.upload_file, DATA_FILE, DATA_FILE)
-                logger.info(f"📤 Dados salvos no Drive (ID: {file_id})")
-            
-            DATA_CACHE = data
-            
-        except Exception as e:
-            logger.error(f"❌ Falha ao salvar dados: {str(e)}")
-            raise
+        # 2. Tenta carregar localmente
+        if os.path.exists(DATA_FILE):
+            if await load_from_file(DATA_FILE):
+                logger.info("Dados carregados do arquivo local")
+                return
 
-async def get_cached_data() -> Dict[str, Any]:
-    """Retorna uma cópia dos dados em cache"""
-    async with DATA_LOCK:
-        return json.loads(json.dumps(DATA_CACHE))
+        # 3. Cria estrutura vazia se não existir
+        DATA_CACHE.update({"streamers": {}, "youtube_channels": {}})
+        logger.info("Novo arquivo de dados criado")
+        
+    except Exception as e:
+        logger.critical(f"Falha crítica ao carregar dados: {str(e)}")
+        raise
 
-async def set_cached_data(new_data: Dict[str, Any], drive_service: Optional['GoogleDriveService'] = None) -> None:
-    """Atualiza os dados em cache e persiste no storage"""
-    global DATA_CACHE
-    
-    async with DATA_LOCK:
-        if validate_data_structure_sync(new_data):
-            DATA_CACHE = new_data
-            await save_data_to_drive(DATA_CACHE, drive_service)
+async def save_data(data: Dict[str, Any], drive_service: Optional['GoogleDriveService'] = None) -> None:
+    """Salva dados localmente e no Drive"""
+    try:
+        # 1. Salva localmente
+        if USE_AIOFILES:
+            async with aiofiles.open(DATA_FILE, 'w') as f:
+                await f.write(json.dumps(data, indent=2))
         else:
-            logger.error("❌ Tentativa de atualizar com dados inválidos")
-            raise ValueError("Estrutura de dados inválida")
+            with open(DATA_FILE, 'w') as f:
+                json.dump(data, f, indent=2)
 
-async def backup_data() -> None:
-    """Cria backup local dos dados"""
-    async with DATA_LOCK:
-        try:
-            if os.path.exists(DATA_FILE):
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                backup_file = f"{DATA_FILE}.backup_{timestamp}"
-                shutil.copy(DATA_FILE, backup_file)
-                logger.info(f"💾 Backup local criado: {backup_file}")
-        except Exception as e:
-            logger.error(f"❌ Falha ao criar backup: {str(e)}")
+        # 2. Envia para o Google Drive
+        if drive_service:
+            await asyncio.to_thread(drive_service.upload_file, DATA_FILE, DATA_FILE)
+
+        logger.info("Dados salvos com sucesso")
+    except Exception as e:
+        logger.error(f"Erro ao salvar dados: {str(e)}")
+        raise
+
+async def get_data() -> Dict[str, Any]:
+    """Retorna uma cópia dos dados atuais"""
+    return DATA_CACHE.copy()
