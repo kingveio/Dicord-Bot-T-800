@@ -76,12 +76,15 @@ async def graceful_shutdown():
     await asyncio.sleep(0.5)
 
 if __name__ == '__main__':
+    # Cria o arquivo de dados inicial se não existir
     if not os.path.exists("streamers.json"):
         with open("streamers.json", 'w', encoding='utf-8') as f:
             f.write("{}")
 
+    # Inicia os serviços de forma assíncrona
     asyncio.run(initialize_services())
     
+    # Inicia o Flask em uma thread
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
     
