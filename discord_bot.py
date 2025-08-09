@@ -9,8 +9,9 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands, ui
 
+# Importações necessárias
 from data_manager import get_cached_data, set_cached_data
-from twitch_api import TwitchAPI # Importar a TwitchAPI
+from twitch_api import TwitchAPI
 
 # Configuração do logging
 logging.basicConfig(
@@ -80,7 +81,6 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
             if not member:
                 return await interaction.followup.send("❌ Membro não encontrado no servidor!", ephemeral=True)
             
-            # Pega os dados do cache
             data = await get_cached_data()
             guild_id = str(interaction.guild.id)
 
@@ -115,7 +115,6 @@ async def streamers_command(interaction: discord.Interaction):
         
         view = ui.View()
         
-        # Botão para adicionar streamer
         add_button = ui.Button(
             style=discord.ButtonStyle.green,
             label="Adicionar Streamer",
@@ -128,7 +127,6 @@ async def streamers_command(interaction: discord.Interaction):
         add_button.callback = add_callback
         view.add_item(add_button)
         
-        # Botão para listar streamers
         list_button = ui.Button(
             style=discord.ButtonStyle.blurple,
             label="Listar Streamers",
@@ -214,7 +212,7 @@ async def setup_live_roles_for_all_guilds():
     for guild in bot.guilds:
         await get_or_create_live_role(guild)
 
-@tasks.loop(minutes=5) # Alterado para 5 minutos para otimizar chamadas à API
+@tasks.loop(minutes=5)
 async def check_live_streamers():
     """Verifica quais streamers estão ao vivo"""
     logger.info("🔍 Verificando streamers ao vivo...")
@@ -235,7 +233,6 @@ async def check_live_streamers():
         logger.error(f"❌ Erro ao buscar lives da Twitch: {e}")
         return
 
-    # Processa cada servidor e atualiza os cargos
     for guild_id_str, streamers_map in data["streamers"].items():
         guild = bot.get_guild(int(guild_id_str))
         if not guild:
