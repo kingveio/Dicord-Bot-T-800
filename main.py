@@ -90,3 +90,36 @@ if __name__ == '__main__':
         logger.error(f"❌ Ocorreu um erro fatal: {e}")
     finally:
         asyncio.run(shutdown())
+
+async def main_async():
+    global HTTP_SESSION
+    if HTTP_SESSION is None:
+        timeout = aiohttp.ClientTimeout(total=30)
+        HTTP_SESSION = aiohttp.ClientSession(timeout=timeout)
+    
+    bot.twitch_api = TwitchAPI(HTTP_SESSION, os.environ["TWITCH_CLIENT_ID"], os.environ["TWITCH_CLIENT_SECRET"])
+    bot.drive_service = GoogleDriveService()
+    
+    await load_data_from_drive_if_exists(bot.drive_service)
+
+    # Inicia o salvamento automático em segundo plano
+    asyncio.create_task(start_auto_save(bot.drive_service))
+
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+
+    await bot.start(os.environ["DISCORD_TOKEN"])
+
+if __name__ == '__main__':
+    if not os.path.exists("streamers.json"):
+        with open("streamers.json", 'w', encoding='utf-8') as f:
+            f.write("{}")
+
+    try:
+        asyncio.run(main_async())
+    except KeyboardInterrupt:
+        logger.info("👋 Desligando via KeyboardInterrupt")
+    except Exception as e:
+        logger.error(f"❌ Ocorreu um erro fatal: {e}")
+    finally:
+        asyncio.run(shutdown())
