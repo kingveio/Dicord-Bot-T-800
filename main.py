@@ -59,22 +59,20 @@ HTTP_SESSION = None
 async def main_async():
     global HTTP_SESSION
     if HTTP_SESSION is None:
-        HTTP_SESSION = aiohttp.ClientSession()
+        timeout = aiohttp.ClientTimeout(total=30)
+        HTTP_SESSION = aiohttp.ClientSession(timeout=timeout)
     
     bot.twitch_api = TwitchAPI(HTTP_SESSION, os.environ["TWITCH_CLIENT_ID"], os.environ["TWITCH_CLIENT_SECRET"])
     bot.drive_service = GoogleDriveService()
     
     await load_data_from_drive_if_exists(bot.drive_service)
 
-    # Inicia o Flask em uma thread separada
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
 
-    # Inicia o bot do Discord
     await bot.start(os.environ["DISCORD_TOKEN"])
 
 if __name__ == '__main__':
-    # Cria o arquivo de dados inicial se não existir
     if not os.path.exists("streamers.json"):
         with open("streamers.json", 'w', encoding='utf-8') as f:
             f.write("{}")
@@ -83,3 +81,6 @@ if __name__ == '__main__':
         asyncio.run(main_async())
     except Exception as e:
         logger.error(f"❌ Ocorreu um erro fatal: {e}")
+    finally:
+        if HTTP_SESSION:
+            await HTTP_SESSION.close()
