@@ -16,7 +16,6 @@ class TwitchAPI:
         self.token_expiry: float = 0.0
 
     async def _get_access_token(self) -> Optional[str]:
-        # Implementação para obter token de acesso
         if self.access_token and self.token_expiry > asyncio.get_event_loop().time():
             return self.access_token
 
