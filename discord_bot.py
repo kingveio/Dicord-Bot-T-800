@@ -240,6 +240,7 @@ class RemoveYoutubeChannelModal(ui.Modal, title="Remover Canal do YouTube"):
 @app_commands.checks.has_permissions(administrator=True)
 async def streamers_command(interaction: discord.Interaction):
     try:
+        await interaction.response.defer(ephemeral=True) # <<< ADICIONADO AQUI
         embed = discord.Embed(
             title="🎮 Gerenciamento de Streamers da Twitch",
             description="Use os botões abaixo para gerenciar os streamers",
@@ -280,7 +281,7 @@ async def streamers_command(interaction: discord.Interaction):
         list_button.callback = list_twitch_callback
         view.add_item(list_button)
         
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True) # <<< ALTERADO PARA followup.send()
         
     except Exception as e:
         logger.error(f"Erro no comando streamers: {e}")
@@ -291,6 +292,7 @@ async def streamers_command(interaction: discord.Interaction):
 @app_commands.checks.has_permissions(administrator=True)
 async def youtube_command(interaction: discord.Interaction):
     try:
+        await interaction.response.defer(ephemeral=True) # <<< ADICIONADO AQUI
         embed = discord.Embed(
             title="▶️ Gerenciamento de Canais do YouTube",
             description="Use os botões abaixo para gerenciar os canais de notificação",
@@ -313,7 +315,7 @@ async def youtube_command(interaction: discord.Interaction):
 
         list_button = ui.Button(style=discord.ButtonStyle.blurple, label="Listar Canais", emoji="📋")
         async def list_yt_callback(interaction: discord.Interaction):
-            await interaction.response.defer(ephemeral=True)
+            await interaction.response.defer(ephemeral=True) # <<< ADICIONADO AQUI
             data = await get_cached_data()
             yt_channels = data["youtube_channels"].get(str(interaction.guild.id), {})
             
@@ -328,14 +330,15 @@ async def youtube_command(interaction: discord.Interaction):
                     value=f"Notificações em: {notification_channel.mention if notification_channel else '❌ Canal não encontrado'}",
                     inline=False
                 )
-            await interaction.followup.send(embed=embed, ephemeral=True)
+            await interaction.followup.send(embed=embed, ephemeral=True) # <<< ALTERADO PARA followup.send()
         list_button.callback = list_yt_callback
         view.add_item(list_button)
 
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.followup.send(embed=embed, view=view, ephemeral=True) # <<< ALTERADO PARA followup.send()
     except Exception as e:
         logger.error(f"Erro no comando youtube: {e}")
         await interaction.followup.send("❌ Ocorreu um erro ao abrir o menu.", ephemeral=True)
+
 
 
 @bot.tree.command(name="status", description="Verifica o status do bot")
