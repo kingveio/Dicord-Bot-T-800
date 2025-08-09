@@ -9,11 +9,9 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands, ui
 
-# Importações necessárias
 from data_manager import get_cached_data, set_cached_data
 from twitch_api import TwitchAPI
 
-# Configuração do logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -24,7 +22,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configuração do bot
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
@@ -43,13 +40,9 @@ class StreamBot(commands.Bot):
         self.live_role_name = "Ao Vivo"
         self.twitch_api: Optional[TwitchAPI] = None
         self.drive_service = None
-        self.guild_live_roles: Dict[int, Optional[discord.Role]] = {} # Cache de roles
+        self.guild_live_roles: Dict[int, Optional[discord.Role]] = {}
 
 bot = StreamBot()
-
-# --------------------------------------------------------------------------
-# Menu de Streamers (UI)
-# --------------------------------------------------------------------------
 
 class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
     twitch_username = ui.TextInput(
@@ -105,7 +98,6 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
 @bot.tree.command(name="streamers", description="Gerenciar streamers")
 @app_commands.checks.has_permissions(administrator=True)
 async def streamers_command(interaction: discord.Interaction):
-    """Menu principal de gerenciamento de streamers"""
     try:
         embed = discord.Embed(
             title="🎮 Gerenciamento de Streamers",
@@ -114,29 +106,18 @@ async def streamers_command(interaction: discord.Interaction):
         )
         
         view = ui.View()
-        
-        add_button = ui.Button(
-            style=discord.ButtonStyle.green,
-            label="Adicionar Streamer",
-            emoji="➕"
-        )
+        add_button = ui.Button(style=discord.ButtonStyle.green, label="Adicionar Streamer", emoji="➕")
         
         async def add_callback(interaction: discord.Interaction):
             await interaction.response.send_modal(AddStreamerModal())
-            
         add_button.callback = add_callback
         view.add_item(add_button)
         
-        list_button = ui.Button(
-            style=discord.ButtonStyle.blurple,
-            label="Listar Streamers",
-            emoji="📋"
-        )
+        list_button = ui.Button(style=discord.ButtonStyle.blurple, label="Listar Streamers", emoji="📋")
         
         async def list_callback(interaction: discord.Interaction):
             await interaction.response.defer(ephemeral=True)
             guild_id = str(interaction.guild.id)
-            
             data = await get_cached_data()
             streamers_list = data["streamers"].get(guild_id, {})
 
@@ -144,7 +125,6 @@ async def streamers_command(interaction: discord.Interaction):
                 return await interaction.followup.send("ℹ️ Nenhum streamer registrado neste servidor.", ephemeral=True)
             
             embed = discord.Embed(title="📋 Streamers Registrados", color=0x9147FF)
-            
             for twitch_name, discord_id in streamers_list.items():
                 member = interaction.guild.get_member(int(discord_id))
                 embed.add_field(
@@ -152,9 +132,7 @@ async def streamers_command(interaction: discord.Interaction):
                     value=f"Discord: {member.mention if member else '❌ Usuário não encontrado'}",
                     inline=False
                 )
-            
             await interaction.followup.send(embed=embed, ephemeral=True)
-            
         list_button.callback = list_callback
         view.add_item(list_button)
         
@@ -164,28 +142,20 @@ async def streamers_command(interaction: discord.Interaction):
         logger.error(f"Erro no comando streamers: {e}")
         await interaction.followup.send("❌ Ocorreu um erro ao abrir o menu.", ephemeral=True)
 
-# --------------------------------------------------------------------------
-# Sistema de Cargos e Verificação de Lives
-# --------------------------------------------------------------------------
-
 async def get_or_create_live_role(guild: discord.Guild) -> Optional[discord.Role]:
-    """Obtém ou cria o cargo 'Ao Vivo'"""
     if guild.id in bot.guild_live_roles:
         role = bot.guild_live_roles[guild.id]
         if role:
             return role
-        
     role = discord.utils.get(guild.roles, name=bot.live_role_name)
     if role:
         bot.guild_live_roles[guild.id] = role
         return role
-    
     try:
         if not guild.me.guild_permissions.manage_roles:
             logger.warning(f"Sem permissões para criar cargo em {guild.name}")
             bot.guild_live_roles[guild.id] = None
             return None
-            
         role = await guild.create_role(
             name=bot.live_role_name,
             color=discord.Color.purple(),
@@ -193,123 +163,91 @@ async def get_or_create_live_role(guild: discord.Guild) -> Optional[discord.Role
             mentionable=True,
             reason="Cargo para streamers ao vivo"
         )
-        
         try:
             await role.edit(position=guild.me.top_role.position - 1)
         except Exception as e:
             logger.debug(f"Não foi possível reposicionar o cargo em {guild.name}: {e}")
-        
         bot.guild_live_roles[guild.id] = role
         return role
-        
     except Exception as e:
         logger.error(f"Erro ao criar cargo em {guild.name}: {e}")
         bot.guild_live_roles[guild.id] = None
         return None
 
 async def setup_live_roles_for_all_guilds():
-    """Garante que o cargo 'Ao Vivo' existe em todos os servidores na inicialização"""
     for guild in bot.guilds:
         await get_or_create_live_role(guild)
 
 @tasks.loop(minutes=5)
 async def check_live_streamers():
-    """Verifica quais streamers estão ao vivo"""
     logger.info("🔍 Verificando streamers ao vivo...")
-    
     data = await get_cached_data()
     all_streamers_to_check = set()
     for streamers in data["streamers"].values():
         all_streamers_to_check.update(streamers.keys())
-
     if not all_streamers_to_check:
         logger.info("ℹ️ Nenhum streamer registrado para verificar.")
         return
-
     try:
         live_streamers_data = await bot.twitch_api.get_live_streams(list(all_streamers_to_check))
         live_streamers = {stream["user_login"].lower() for stream in live_streamers_data}
     except Exception as e:
         logger.error(f"❌ Erro ao buscar lives da Twitch: {e}")
         return
-
     for guild_id_str, streamers_map in data["streamers"].items():
         guild = bot.get_guild(int(guild_id_str))
         if not guild:
             continue
-            
         live_role = await get_or_create_live_role(guild)
         if not live_role:
             continue
-            
         for twitch_name, discord_id in streamers_map.items():
             try:
                 member = guild.get_member(int(discord_id))
                 if not member:
                     continue
-                    
                 is_live = twitch_name in live_streamers
                 has_role = live_role in member.roles
-                
                 if is_live and not has_role:
                     await member.add_roles(live_role)
                     logger.info(f"➕ Cargo 'Ao Vivo' dado para {twitch_name} em {guild.name}")
                 elif not is_live and has_role:
                     await member.remove_roles(live_role)
                     logger.info(f"➖ Cargo 'Ao Vivo' removido de {twitch_name} em {guild.name}")
-                    
             except Exception as e:
                 logger.error(f"Erro ao atualizar cargo para {twitch_name} em {guild.name}: {e}")
 
-# --------------------------------------------------------------------------
-# Eventos do Bot
-# --------------------------------------------------------------------------
-
 @bot.event
 async def on_ready():
-    """Executado quando o bot está pronto"""
     logger.info(f"✅ Bot conectado como {bot.user} (ID: {bot.user.id})")
     logger.info(f"📊 Servidores: {len(bot.guilds)}")
-    
     try:
         synced = await bot.tree.sync()
         logger.info(f"🔄 {len(synced)} comandos sincronizados")
     except Exception as e:
         logger.error(f"❌ Erro ao sincronizar comandos: {e}")
-
     await setup_live_roles_for_all_guilds()
-    
     if not check_live_streamers.is_running():
         check_live_streamers.start()
 
 @bot.event
 async def on_guild_join(guild):
-    """Executado quando o bot entra em um servidor"""
     logger.info(f"➕ Entrou no servidor: {guild.name} (ID: {guild.id})")
     await get_or_create_live_role(guild)
 
-# --------------------------------------------------------------------------
-# Comandos Adicionais
-# --------------------------------------------------------------------------
-
 @bot.tree.command(name="status", description="Verifica o status do bot")
 async def status(interaction: discord.Interaction):
-    """Mostra informações do bot"""
     try:
         await interaction.response.defer(ephemeral=True)
-        
         uptime = datetime.now() - bot.start_time
         guild_count = len(bot.guilds)
-        
         data = await get_cached_data()
         streamer_count = sum(len(g) for g in data["streamers"].values())
-        
         embed = discord.Embed(title="🤖 Status do Bot", color=0x00FF00)
         embed.add_field(name="⏱ Tempo ativo", value=str(uptime).split('.')[0], inline=False)
         embed.add_field(name="📊 Servidores", value=guild_count, inline=True)
         embed.add_field(name="🎮 Streamers", value=streamer_count, inline=True)
         embed.add_field(name="📶 Latência", value=f"{round(bot.latency * 1000, 2)}ms", inline=True)
-        
         await interaction.followup.send(embed=embed)
     except Exception as e:
         logger.error(f"Erro no comando status: {e}")
