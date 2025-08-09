@@ -162,7 +162,7 @@ async def debug(ctx):
         # Informações específicas do bot
         data = await get_cached_data()
         total_streamers = sum(len(g) for g in data.get("streamers", {}).values())
-        embed.add_field(name="🎮 Streamers", value=f"{total_streamers} em {len(data.get('streamers', {})) servidores", inline=False)
+        embed.add_field(name="🎮 Streamers", value=f"{total_streamers} em {len(data.get('streamers', {}))} servidores", inline=False)
         
         embed.set_footer(text=f"Bot ID: {bot.user.id}")
         await ctx.send(embed=embed)
