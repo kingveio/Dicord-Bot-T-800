@@ -23,8 +23,7 @@ bot = commands.Bot(
     activity=discord.Activity(type=discord.ActivityType.watching, name="Exterminador do Futuro 2")
 )
 
-twitch_api: TwitchAPI = None
-drive_service: GoogleDriveService = None
+
 START_TIME = datetime.now()
 CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL", 55))
 CHECK_TASK = None
@@ -85,7 +84,7 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
                 return
 
             data[guild_id][twitch_username] = discord_id
-            await set_cached_data(data, drive_service, persist=True)
+            await set_cached_data(data, bot.drive_service, persist=True)
 
             await interaction.response.send_message(f"✅ {member.mention} vinculado ao Twitch: `{twitch_username}`", ephemeral=True)
 
@@ -130,7 +129,7 @@ class StreamersView(ui.View):
                 guild_id = str(inner_interaction.guild.id)
                 if selected in data_local.get(guild_id, {}):
                     del data_local[guild_id][selected]
-                    await set_cached_data(data_local, drive_service, persist=True)
+                    await set_cached_data(data_local, bot.drive_service, persist=True)
                     await inner_interaction.response.send_message(f"✅ Streamer '{selected}' removido!", ephemeral=True)
                 else:
                     await inner_interaction.response.send_message("❌ Streamer não encontrado (provavelmente já removido).", ephemeral=True)
@@ -190,7 +189,8 @@ async def check_streams_task():
                 await asyncio.sleep(CHECK_INTERVAL)
                 continue
             
-            live_streamers = await twitch_api.check_live_streams(all_streamers)
+            # Chama o método através do objeto bot
+            live_streamers = await bot.twitch_api.check_live_streams(all_streamers)
 
             for guild_id, streamers in data.items():
                 try:
@@ -221,7 +221,7 @@ async def check_streams_task():
                 except ValueError as ve:
                     logger.error(f"❌ Erro ao converter guild_id '{guild_id}' para int: {ve}")
                     del data[guild_id]
-                    await set_cached_data(data, drive_service, persist=True)
+                    await set_cached_data(data, bot.drive_service, persist=True)
 
         except Exception as e:
             logger.error(f"Erro no verificador principal: {e}")
