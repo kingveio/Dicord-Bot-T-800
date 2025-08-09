@@ -137,7 +137,10 @@ async def twitch_remove_command(
 @bot.tree.command(name="twitch_list", description="Lista streamers registrados")
 @app_commands.checks.has_permissions(administrator=True)
 async def twitch_list_command(interaction: discord.Interaction):
+    # Acknowledge the command IMMEDIATELY to avoid the timeout
     await interaction.response.defer(ephemeral=True)
+    
+    # Rest of the code can now run without a rush
     guild_id = str(interaction.guild.id)
     data = await get_cached_data()
     streamers_list = data["streamers"].get(guild_id, {})
