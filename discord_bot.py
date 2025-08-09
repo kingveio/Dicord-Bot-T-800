@@ -33,7 +33,7 @@ class StreamBot(commands.Bot):
             intents=intents,
             activity=discord.Activity(
                 type=discord.ActivityType.watching,
-                name="Exterminador do Futuro 2"
+                name="Streamers da Twitch"
             )
         )
         self.start_time = datetime.now()
@@ -43,6 +43,10 @@ class StreamBot(commands.Bot):
         self.guild_live_roles: Dict[int, Optional[discord.Role]] = {}
 
 bot = StreamBot()
+
+# --------------------------------------------------------------------------
+# Modals para Adicionar e Remover Streamers
+# --------------------------------------------------------------------------
 
 class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
     twitch_username = ui.TextInput(
@@ -95,9 +99,54 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
             logger.error(f"Erro ao adicionar streamer: {e}")
             await interaction.followup.send("❌ Ocorreu um erro ao processar sua solicitação.", ephemeral=True)
 
+class RemoveStreamerModal(ui.Modal, title="Remover Streamer"):
+    twitch_username = ui.TextInput(
+        label="Nome na Twitch para remover",
+        placeholder="ex: alanzoka",
+        min_length=3,
+        max_length=25
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            twitch_name = str(self.twitch_username).lower().strip()
+            data = await get_cached_data()
+            guild_id = str(interaction.guild.id)
+
+            if guild_id not in data["streamers"] or twitch_name not in data["streamers"][guild_id]:
+                return await interaction.followup.send(
+                    f"⚠️ O streamer `{twitch_name}` não está registrado.",
+                    ephemeral=True
+                )
+
+            discord_id = data["streamers"][guild_id].pop(twitch_name)
+            await set_cached_data(data, bot.drive_service)
+
+            member = interaction.guild.get_member(int(discord_id))
+            if member:
+                live_role = await get_or_create_live_role(interaction.guild)
+                if live_role and live_role in member.roles:
+                    await member.remove_roles(live_role)
+            
+            await interaction.followup.send(
+                f"✅ O streamer `{twitch_name}` foi removido com sucesso.",
+                ephemeral=True
+            )
+
+        except Exception as e:
+            logger.error(f"Erro ao remover streamer: {e}")
+            await interaction.followup.send("❌ Ocorreu um erro ao remover o streamer.", ephemeral=True)
+
+
+# --------------------------------------------------------------------------
+# Comandos do Bot
+# --------------------------------------------------------------------------
+
 @bot.tree.command(name="streamers", description="Gerenciar streamers")
 @app_commands.checks.has_permissions(administrator=True)
 async def streamers_command(interaction: discord.Interaction):
+    """Menu principal de gerenciamento de streamers"""
     try:
         embed = discord.Embed(
             title="🎮 Gerenciamento de Streamers",
@@ -106,21 +155,28 @@ async def streamers_command(interaction: discord.Interaction):
         )
         
         view = ui.View()
-        add_button = ui.Button(style=discord.ButtonStyle.green, label="Adicionar Streamer", emoji="➕")
         
+        # Botão para Adicionar
+        add_button = ui.Button(style=discord.ButtonStyle.green, label="Adicionar Streamer", emoji="➕")
         async def add_callback(interaction: discord.Interaction):
             await interaction.response.send_modal(AddStreamerModal())
         add_button.callback = add_callback
         view.add_item(add_button)
         
+        # Botão para Remover (NOVO)
+        remove_button = ui.Button(style=discord.ButtonStyle.red, label="Remover Streamer", emoji="➖")
+        async def remove_callback(interaction: discord.Interaction):
+            await interaction.response.send_modal(RemoveStreamerModal())
+        remove_button.callback = remove_callback
+        view.add_item(remove_button)
+
+        # Botão para Listar
         list_button = ui.Button(style=discord.ButtonStyle.blurple, label="Listar Streamers", emoji="📋")
-        
         async def list_callback(interaction: discord.Interaction):
             await interaction.response.defer(ephemeral=True)
             guild_id = str(interaction.guild.id)
             data = await get_cached_data()
             streamers_list = data["streamers"].get(guild_id, {})
-
             if not streamers_list:
                 return await interaction.followup.send("ℹ️ Nenhum streamer registrado neste servidor.", ephemeral=True)
             
@@ -141,6 +197,30 @@ async def streamers_command(interaction: discord.Interaction):
     except Exception as e:
         logger.error(f"Erro no comando streamers: {e}")
         await interaction.followup.send("❌ Ocorreu um erro ao abrir o menu.", ephemeral=True)
+
+
+@bot.tree.command(name="status", description="Verifica o status do bot")
+async def status(interaction: discord.Interaction):
+    """Mostra informações do bot"""
+    try:
+        await interaction.response.defer(ephemeral=True)
+        uptime = datetime.now() - bot.start_time
+        guild_count = len(bot.guilds)
+        data = await get_cached_data()
+        streamer_count = sum(len(g) for g in data["streamers"].values())
+        embed = discord.Embed(title="🤖 Status do Bot", color=0x00FF00)
+        embed.add_field(name="⏱ Tempo ativo", value=str(uptime).split('.')[0], inline=False)
+        embed.add_field(name="📊 Servidores", value=guild_count, inline=True)
+        embed.add_field(name="🎮 Streamers", value=streamer_count, inline=True)
+        embed.add_field(name="📶 Latência", value=f"{round(bot.latency * 1000, 2)}ms", inline=True)
+        await interaction.followup.send(embed=embed)
+    except Exception as e:
+        logger.error(f"Erro no comando status: {e}")
+        await interaction.followup.send("❌ Erro ao verificar status.", ephemeral=True)
+
+# --------------------------------------------------------------------------
+# Sistema de Cargos e Verificação de Lives
+# --------------------------------------------------------------------------
 
 async def get_or_create_live_role(guild: discord.Guild) -> Optional[discord.Role]:
     if guild.id in bot.guild_live_roles:
@@ -217,6 +297,10 @@ async def check_live_streamers():
             except Exception as e:
                 logger.error(f"Erro ao atualizar cargo para {twitch_name} em {guild.name}: {e}")
 
+# --------------------------------------------------------------------------
+# Eventos do Bot
+# --------------------------------------------------------------------------
+
 @bot.event
 async def on_ready():
     logger.info(f"✅ Bot conectado como {bot.user} (ID: {bot.user.id})")
@@ -234,21 +318,3 @@ async def on_ready():
 async def on_guild_join(guild):
     logger.info(f"➕ Entrou no servidor: {guild.name} (ID: {guild.id})")
     await get_or_create_live_role(guild)
-
-@bot.tree.command(name="status", description="Verifica o status do bot")
-async def status(interaction: discord.Interaction):
-    try:
-        await interaction.response.defer(ephemeral=True)
-        uptime = datetime.now() - bot.start_time
-        guild_count = len(bot.guilds)
-        data = await get_cached_data()
-        streamer_count = sum(len(g) for g in data["streamers"].values())
-        embed = discord.Embed(title="🤖 Status do Bot", color=0x00FF00)
-        embed.add_field(name="⏱ Tempo ativo", value=str(uptime).split('.')[0], inline=False)
-        embed.add_field(name="📊 Servidores", value=guild_count, inline=True)
-        embed.add_field(name="🎮 Streamers", value=streamer_count, inline=True)
-        embed.add_field(name="📶 Latência", value=f"{round(bot.latency * 1000, 2)}ms", inline=True)
-        await interaction.followup.send(embed=embed)
-    except Exception as e:
-        logger.error(f"Erro no comando status: {e}")
-        await interaction.followup.send("❌ Erro ao verificar status.", ephemeral=True)
