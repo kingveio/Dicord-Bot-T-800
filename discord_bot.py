@@ -9,8 +9,6 @@ from discord.ext import commands
 from discord import app_commands, ui
 
 from data_manager import get_cached_data, set_cached_data
-from twitch_api import TwitchAPI
-from drive_service import GoogleDriveService
 
 logger = logging.getLogger(__name__)
 
@@ -20,9 +18,8 @@ intents.message_content = True
 bot = commands.Bot(
     command_prefix="!",
     intents=intents,
-    activity=discord.Activity(type=discord.ActivityType.watching, name="Exterminador do Futuro 2")
+    activity=discord.Activity(type=discord.ActivityType.watching, name="Streamers da Twitch")
 )
-
 
 START_TIME = datetime.now()
 CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL", 55))
@@ -48,25 +45,20 @@ def sanitize_discord_id(input_str: str) -> str:
     if not digits.isdigit() or not (17 <= len(digits) <= 19): return ""
     return digits
 
-class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
-    twitch_name = ui.TextInput(label="Nome na Twitch", placeholder="ex: alanzoka", min_length=3, max_length=25)
-    discord_id = ui.TextInput(label="ID/Menção do Discord", placeholder="Digite o ID ou @usuário", min_length=3, max_length=32)
+class AddStreamerDiscordModal(ui.Modal, title="Vincular Usuário Discord"):
+    def __init__(self, twitch_username: str):
+        super().__init__()
+        self.twitch_username = twitch_username
+    
+    discord_id = ui.TextInput(label="ID do Discord", placeholder="Digite o ID ou @mencione um usuário", min_length=3, max_length=32)
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
-            if not interaction.user.guild_permissions.administrator:
-                await interaction.response.send_message("❌ Apenas administradores podem usar este comando!", ephemeral=True)
-                return
-
-            twitch_username = self.twitch_name.value.lower().strip()
-            if not re.match(r'^[a-zA-Z0-9_]{3,25}$', twitch_username):
-                await interaction.response.send_message("❌ Nome inválido na Twitch! Use apenas letras, números e _", ephemeral=True)
-                return
-
             discord_input = self.discord_id.value.strip()
             discord_id = sanitize_discord_id(discord_input)
+
             if not discord_id:
-                await interaction.response.send_message("❌ ID Discord inválido! Deve ter entre 17 e 19 dígitos.", ephemeral=True)
+                await interaction.response.send_message("❌ ID do Discord inválido! Deve ter entre 17 e 19 dígitos.", ephemeral=True)
                 return
 
             member = interaction.guild.get_member(int(discord_id))
@@ -79,17 +71,37 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
             if guild_id not in data:
                 data[guild_id] = {}
 
-            if twitch_username in data[guild_id]:
-                await interaction.response.send_message(f"⚠️ O streamer '{twitch_username}' já está vinculado!", ephemeral=True)
+            if self.twitch_username in data[guild_id]:
+                await interaction.response.send_message(f"⚠️ O streamer '{self.twitch_username}' já está vinculado!", ephemeral=True)
                 return
 
-            data[guild_id][twitch_username] = discord_id
+            data[guild_id][self.twitch_username] = discord_id
             await set_cached_data(data, bot.drive_service, persist=True)
 
-            await interaction.response.send_message(f"✅ {member.mention} vinculado ao Twitch: `{twitch_username}`", ephemeral=True)
+            await interaction.response.send_message(f"✅ {member.mention} vinculado ao Twitch: `{self.twitch_username}`", ephemeral=True)
+            
+        except Exception as e:
+            logger.error(f"Erro ao vincular ID do Discord para {self.twitch_username}: {e}")
+            await interaction.response.send_message("❌ Erro interno ao processar!", ephemeral=True)
+
+class AddStreamerTwitchModal(ui.Modal, title="Adicionar Streamer Twitch"):
+    twitch_name = ui.TextInput(label="Nome do Canal na Twitch", placeholder="ex: alanzoka", min_length=3, max_length=25)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        try:
+            twitch_username = self.twitch_name.value.lower().strip()
+            
+            if not re.match(r'^[a-zA-Z0-9_]{3,25}$', twitch_username):
+                await interaction.response.send_message("❌ Nome inválido na Twitch! Use apenas letras, números e _.", ephemeral=True)
+                return
+
+            # Note: A validação de existência do streamer foi removida para simplificar.
+            # Se você quiser reativá-la, precisará de uma nova chamada de API aqui.
+
+            await interaction.response.send_modal(AddStreamerDiscordModal(twitch_username))
 
         except Exception as e:
-            logger.error(f"Erro ao adicionar streamer: {e}")
+            logger.error(f"Erro ao processar nome da Twitch: {e}")
             await interaction.response.send_message("❌ Erro interno ao processar!", ephemeral=True)
 
 class StreamersView(ui.View):
@@ -104,7 +116,7 @@ class StreamersView(ui.View):
 
     @ui.button(label="Adicionar", style=discord.ButtonStyle.green, emoji="➕", custom_id="add_streamer")
     async def add_streamer(self, interaction: discord.Interaction, button: ui.Button):
-        await interaction.response.send_modal(AddStreamerModal())
+        await interaction.response.send_modal(AddStreamerTwitchModal())
 
     @ui.button(label="Remover", style=discord.ButtonStyle.red, emoji="➖", custom_id="remove_streamer")
     async def remove_streamer(self, interaction: discord.Interaction, button: ui.Button):
@@ -189,7 +201,6 @@ async def check_streams_task():
                 await asyncio.sleep(CHECK_INTERVAL)
                 continue
             
-            # Chama o método através do objeto bot
             live_streamers = await bot.twitch_api.check_live_streams(all_streamers)
 
             for guild_id, streamers in data.items():
