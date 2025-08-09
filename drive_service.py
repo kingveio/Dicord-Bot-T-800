@@ -14,12 +14,11 @@ class GoogleDriveService:
         self.SCOPES = ['https://www.googleapis.com/auth/drive']
         self.service_account_info = self._get_service_account_info()
         self.service = self._authenticate()
-        self.timeout = 30  # seconds
+        self.timeout = 30
 
     def _get_service_account_info(self) -> Dict[str, Any]:
         private_key = os.environ["DRIVE_PRIVATE_KEY"]
         
-        # Corrige a formatação da chave privada
         if '\\n' in private_key:
             private_key = private_key.replace('\\n', '\n')
         elif not private_key.startswith('-----BEGIN PRIVATE KEY-----'):
@@ -35,52 +34,47 @@ class GoogleDriveService:
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
             "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": os.environ.get("DRIVE_CLIENT_X509", "")
+            "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{os.environ.get('DRIVE_CLIENT_EMAIL', 'discord-bot-t-800@bot-t-800.iam.gserviceaccount.com')}"
         }
 
     def _authenticate(self):
-        try:
-            creds = service_account.Credentials.from_service_account_info(
-                self.service_account_info,
-                scopes=self.SCOPES
-            )
-            return build('drive', 'v3', credentials=creds, cache_discovery=False)
-        except Exception as e:
-            logger.error(f"Falha na autenticação com o Google Drive. Verifique suas credenciais.")
-            logger.error(f"Detalhes do erro: {str(e)}")
-            raise
+        creds = service_account.Credentials.from_service_account_info(
+            self.service_account_info, scopes=self.SCOPES
+        )
+        return build('drive', 'v3', credentials=creds, cache_discovery=False, static_discovery=False)
 
     def find_file(self, file_name: str) -> Optional[Dict[str, Any]]:
+        query = f"name='{file_name}' and trashed=false and '{os.environ['DRIVE_FOLDER_ID']}' in parents"
         try:
-            query = f"name='{file_name}' and '{os.environ['DRIVE_FOLDER_ID']}' in parents and trashed=false"
             results = self.service.files().list(
                 q=query,
-                fields="files(id, name)"
+                spaces='drive',
+                fields='nextPageToken, files(id, name)',
+                pageSize=1
             ).execute()
-            files = results.get('files', [])
-            return files[0] if files else None
+            items = results.get('files', [])
+            return items[0] if items else None
         except HttpError as e:
             logger.error(f"Erro ao buscar arquivo no Drive: {e}")
             return None
-        except Exception as e:
-            logger.error(f"Erro inesperado ao buscar arquivo: {e}")
-            return None
 
-    def download_file(self, file_name: str, save_path: str) -> bool:
-        file = self.find_file(file_name)
-        if not file:
+    def download_file(self, file_name: str, local_path: str) -> bool:
+        file_info = self.find_file(file_name)
+        if not file_info:
+            logger.info(f"Arquivo '{file_name}' não encontrado no Google Drive.")
             return False
-            
+
+        request = self.service.files().get_media(fileId=file_info['id'])
+        file_handle = io.BytesIO()
+        downloader = MediaIoBaseDownload(file_handle, request)
+        done = False
         try:
-            request = self.service.files().get_media(fileId=file['id'])
-            fh = io.FileIO(save_path, 'wb')
-            downloader = MediaIoBaseDownload(fh, request)
-            
-            done = False
-            while not done:
+            while done is False:
                 status, done = downloader.next_chunk()
-                logger.debug(f"Download {int(status.progress() * 100)}% completo")
-                
+            file_handle.seek(0)
+            with open(local_path, 'wb') as f:
+                f.write(file_handle.read())
+            logger.info(f"✅ Download de '{file_name}' concluído.")
             return True
         except HttpError as e:
             logger.error(f"Erro ao baixar arquivo do Drive: {e}")
