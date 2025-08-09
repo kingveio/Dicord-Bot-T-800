@@ -61,8 +61,8 @@ async def twitch_add_command(
     twitch_username: str,
     discord_member: discord.Member
 ):
+    # Acknowledge immediately
     await interaction.response.defer(ephemeral=True)
-    # Frase do T-800 para a busca
     await interaction.followup.send("Análise de dados em andamento... Aguardando resposta.", ephemeral=True)
     try:
         twitch_name = twitch_username.lower().strip()
@@ -82,7 +82,6 @@ async def twitch_add_command(
         data["streamers"][guild_id][twitch_name] = discord_id
         await set_cached_data(data, bot.drive_service)
 
-        # Frase do T-800 para a conclusão
         await interaction.followup.send(
             f"✅ Dados processados. Alvo {discord_member.mention} vinculado ao streamer Twitch: `{twitch_name}`. Missão cumprida.",
             ephemeral=True
@@ -124,7 +123,6 @@ async def twitch_remove_command(
             if live_role and live_role in member.roles:
                 await member.remove_roles(live_role)
         
-        # Frase do T-800 para a remoção
         await interaction.followup.send(
             f"✅ Streamer `{twitch_name}` removido da lista de alvos. Memória limpa.",
             ephemeral=True
@@ -137,25 +135,26 @@ async def twitch_remove_command(
 @bot.tree.command(name="twitch_list", description="Lista streamers registrados")
 @app_commands.checks.has_permissions(administrator=True)
 async def twitch_list_command(interaction: discord.Interaction):
-    # Acknowledge the command IMMEDIATELY to avoid the timeout
     await interaction.response.defer(ephemeral=True)
-    
-    # Rest of the code can now run without a rush
-    guild_id = str(interaction.guild.id)
-    data = await get_cached_data()
-    streamers_list = data["streamers"].get(guild_id, {})
-    if not streamers_list:
-        return await interaction.followup.send("ℹ️ Nenhum streamer registrado neste servidor.", ephemeral=True)
-    
-    embed = discord.Embed(title="📋 Streamers Registrados", color=0x9147FF)
-    for twitch_name, discord_id in streamers_list.items():
-        member = interaction.guild.get_member(int(discord_id))
-        embed.add_field(
-            name=f"🔹 {twitch_name}",
-            value=f"Discord: {member.mention if member else '❌ Usuário não encontrado'}",
-            inline=False
-        )
-    await interaction.followup.send(embed=embed, ephemeral=True)
+    try:
+        guild_id = str(interaction.guild.id)
+        data = await get_cached_data()
+        streamers_list = data["streamers"].get(guild_id, {})
+        if not streamers_list:
+            return await interaction.followup.send("ℹ️ Nenhum streamer registrado neste servidor.", ephemeral=True)
+        
+        embed = discord.Embed(title="📋 Streamers Registrados", color=0x9147FF)
+        for twitch_name, discord_id in streamers_list.items():
+            member = interaction.guild.get_member(int(discord_id))
+            embed.add_field(
+                name=f"🔹 {twitch_name}",
+                value=f"Discord: {member.mention if member else '❌ Usuário não encontrado'}",
+                inline=False
+            )
+        await interaction.followup.send(embed=embed, ephemeral=True)
+    except Exception as e:
+        logger.error(f"Erro no comando twitch_list: {e}")
+        await interaction.followup.send("❌ Ocorreu um erro ao listar os streamers.", ephemeral=True)
 
 # --------------------------------------------------------------------------
 # Comandos do YouTube
@@ -175,7 +174,6 @@ async def youtube_add_command(
     discord_member: Optional[discord.Member] = None
 ):
     await interaction.response.defer(ephemeral=True)
-    # Frase do T-800 para a busca
     await interaction.followup.send("Buscando alvos no YouTube... Processando dados.", ephemeral=True)
     try:
         if not youtube_url.startswith(("http://", "https://")):
@@ -202,7 +200,6 @@ async def youtube_add_command(
 
         await set_cached_data(data, bot.drive_service)
         
-        # Frase do T-800 para a conclusão
         await interaction.followup.send(
             f"✅ Iniciando monitoramento. Canal do YouTube adicionado com sucesso para o canal {notification_channel.mention}.",
             ephemeral=True
@@ -232,7 +229,6 @@ async def youtube_remove_command(interaction: discord.Interaction, youtube_url: 
         if youtube_id in data.get("youtube_channels", {}).get(guild_id, {}):
             del data["youtube_channels"][guild_id][youtube_id]
             await set_cached_data(data, bot.drive_service)
-            # Frase do T-800 para a remoção
             await interaction.followup.send(
                 f"✅ Canal do YouTube removido com sucesso. Dados desativados.",
                 ephemeral=True
@@ -251,33 +247,37 @@ async def youtube_remove_command(interaction: discord.Interaction, youtube_url: 
 @app_commands.checks.has_permissions(administrator=True)
 async def youtube_list_command(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-    guild_id = str(interaction.guild.id)
-    data = await get_cached_data()
-    yt_channels = data["youtube_channels"].get(guild_id, {})
-    
-    if not yt_channels:
-        return await interaction.followup.send("ℹ️ Nenhum canal do YouTube registrado neste servidor.", ephemeral=True)
+    try:
+        guild_id = str(interaction.guild.id)
+        data = await get_cached_data()
+        yt_channels = data["youtube_channels"].get(guild_id, {})
+        
+        if not yt_channels:
+            return await interaction.followup.send("ℹ️ Nenhum canal do YouTube registrado neste servidor.", ephemeral=True)
 
-    embed = discord.Embed(title="📋 Canais do YouTube Registrados", color=0xFF0000)
-    for youtube_id, config in yt_channels.items():
-        notification_channel = interaction.guild.get_channel(int(config["notification_channel_id"]))
-        discord_member = interaction.guild.get_member(int(config.get("discord_user_id"))) if config.get("discord_user_id") else None
-        
-        member_info = f"Usuário vinculado: {discord_member.mention}" if discord_member else "Nenhum usuário vinculado"
-        
-        embed.add_field(
-            name=f"▶️ Canal ID: `{youtube_id}`",
-            value=f"Notificações em: {notification_channel.mention if notification_channel else '❌ Canal não encontrado'}\n"
-                  f"{member_info}",
-            inline=False
-        )
-    await interaction.followup.send(embed=embed, ephemeral=True)
+        embed = discord.Embed(title="📋 Canais do YouTube Registrados", color=0xFF0000)
+        for youtube_id, config in yt_channels.items():
+            notification_channel = interaction.guild.get_channel(int(config["notification_channel_id"]))
+            discord_member = interaction.guild.get_member(int(config.get("discord_user_id"))) if config.get("discord_user_id") else None
+            
+            member_info = f"Usuário vinculado: {discord_member.mention}" if discord_member else "Nenhum usuário vinculado"
+            
+            embed.add_field(
+                name=f"▶️ Canal ID: `{youtube_id}`",
+                value=f"Notificações em: {notification_channel.mention if notification_channel else '❌ Canal não encontrado'}\n"
+                      f"{member_info}",
+                inline=False
+            )
+        await interaction.followup.send(embed=embed, ephemeral=True)
+    except Exception as e:
+        logger.error(f"Erro no comando youtube_list: {e}")
+        await interaction.followup.send("❌ Ocorreu um erro ao listar os canais do YouTube.", ephemeral=True)
 
 
 @bot.tree.command(name="status", description="Verifica o status do bot")
 async def status(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
     try:
-        await interaction.response.defer(ephemeral=True)
         uptime = datetime.now() - bot.start_time
         guild_count = len(bot.guilds)
         data = await get_cached_data()
@@ -294,6 +294,7 @@ async def status(interaction: discord.Interaction):
     except Exception as e:
         logger.error(f"Erro no comando status: {e}")
         await interaction.followup.send("❌ Erro ao verificar status.", ephemeral=True)
+
 
 # --------------------------------------------------------------------------
 # Tarefas de Verificação (Loop)
@@ -370,9 +371,6 @@ async def check_youtube_channels():
 
         for youtube_id, config in channels_map.items():
             try:
-                # ----------------------------------------
-                # Lógica para notificação de novos vídeos
-                # ----------------------------------------
                 latest_video = await bot.youtube_api.get_latest_video(youtube_id)
                 last_video_id = config.get("last_video_id")
                 
@@ -381,16 +379,12 @@ async def check_youtube_channels():
 
                     notification_channel = guild.get_channel(int(config["notification_channel_id"]))
                     if notification_channel:
-                        # Frase do T-800 para a notificação
                         await notification_channel.send(
                             f"▶️ **NOVA ATIVIDADE DETECTADA NO YOUTUBE!**\n"
                             f"Objeto: **{latest_video['title']}**\n"
                             f"Assistir: {latest_video['url']}"
                         )
                 
-                # ----------------------------------------
-                # Lógica para cargo de "Ao Vivo"
-                # ----------------------------------------
                 discord_id = config.get("discord_user_id")
                 if discord_id:
                     member = guild.get_member(int(discord_id))
