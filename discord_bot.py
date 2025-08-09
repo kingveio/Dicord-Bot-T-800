@@ -31,7 +31,7 @@ class GuildConfig:
         self.notification_channel_id = notification_channel_id
 
 async def get_or_create_live_role(guild: discord.Guild) -> Optional[discord.Role]:
-    role = discord.utils.get(guild.roles, name="Ao Vivo")
+    role = discord.utils.get(guild.roles, name="AO VIVO")
     if role: return role
     try:
         role = await guild.create_role(
