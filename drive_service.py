@@ -55,8 +55,7 @@ class GoogleDriveService:
             query = f"name='{file_name}' and '{os.environ['DRIVE_FOLDER_ID']}' in parents and trashed=false"
             results = self.service.files().list(
                 q=query,
-                fields="files(id, name)",
-                timeout=self.timeout
+                fields="files(id, name)"
             ).execute()
             files = results.get('files', [])
             return files[0] if files else None
@@ -106,15 +105,13 @@ class GoogleDriveService:
             if existing:
                 file = self.service.files().update(
                     fileId=existing['id'],
-                    media_body=media,
-                    timeout=self.timeout
+                    media_body=media
                 ).execute()
             else:
                 file = self.service.files().create(
                     body=file_metadata,
                     media_body=media,
-                    fields='id',
-                    timeout=self.timeout
+                    fields='id'
                 ).execute()
                 
             return file.get('id')
