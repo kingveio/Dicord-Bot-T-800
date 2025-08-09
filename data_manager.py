@@ -5,7 +5,10 @@ import shutil
 import logging
 from datetime import datetime
 import aiofiles
-from typing import Dict, Any
+from typing import Dict, Any, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from drive_service import GoogleDriveService
 
 logger = logging.getLogger(__name__)
 
@@ -15,19 +18,18 @@ DATA_CACHE = {
 }
 DATA_LOCK = asyncio.Lock()
 DATA_FILE = "streamers.json"
+AUTO_SAVE_INTERVAL = 300  # 5 minutos em segundos
 
 def validate_data_structure_sync(data: Dict[str, Any]) -> bool:
     if not isinstance(data, dict): return False
     if "streamers" not in data or "configs" not in data: return False
     
-    # Validate streamers structure
     if not isinstance(data["streamers"], dict): return False
     for guild_id, streamers in data["streamers"].items():
         if not isinstance(guild_id, str) or not isinstance(streamers, dict): return False
         for twitch_user, discord_id in streamers.items():
             if not isinstance(twitch_user, str) or not isinstance(discord_id, str): return False
     
-    # Validate configs structure
     if not isinstance(data["configs"], dict): return False
     for guild_id, config in data["configs"].items():
         if not isinstance(guild_id, str) or not isinstance(config, dict): return False
@@ -49,7 +51,6 @@ def backup_data_sync():
         logger.error(f"❌ Erro no backup: {str(e)}")
 
 async def migrate_old_data(data: Dict[str, Any]) -> Dict[str, Any]:
-    """Migrates old data format to new format"""
     if "streamers" in data and "configs" in data:
         return data
     
@@ -140,14 +141,3 @@ async def set_cached_data(new_data: Dict[str, Any], drive_service, persist: bool
         DATA_CACHE = new_data
     if persist:
         await save_data_to_drive(new_data, drive_service)
-
-async def start_auto_save(drive_service: GoogleDriveService):
-    """Inicia o salvamento automático periódico"""
-    while True:
-        try:
-            await asyncio.sleep(int(os.environ.get("AUTO_SAVE_INTERVAL", "300")))  # Default 5 minutos
-            data = await get_cached_data()
-            await save_data_to_drive(data, drive_service)
-            logger.info("🔄 Salvamento automático no Drive concluído")
-        except Exception as e:
-            logger.error(f"Erro no salvamento automático: {e}")
