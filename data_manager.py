@@ -14,15 +14,16 @@ logger = logging.getLogger(__name__)
 
 DATA_CACHE = {
     "streamers": {},
-    "configs": {}
+    "configs": {},
+    "youtube_channels": {}
 }
 DATA_LOCK = asyncio.Lock()
 DATA_FILE = "streamers.json"
-AUTO_SAVE_INTERVAL = 300  # 5 minutos em segundos
+AUTO_SAVE_INTERVAL = 300
 
 def validate_data_structure_sync(data: Dict[str, Any]) -> bool:
     if not isinstance(data, dict): return False
-    if "streamers" not in data or "configs" not in data: return False
+    if "streamers" not in data or "configs" not in data or "youtube_channels" not in data: return False
     
     if not isinstance(data["streamers"], dict): return False
     for guild_id, streamers in data["streamers"].items():
@@ -35,6 +36,14 @@ def validate_data_structure_sync(data: Dict[str, Any]) -> bool:
         if not isinstance(guild_id, str) or not isinstance(config, dict): return False
         if "notification_channel_id" in config and not isinstance(config["notification_channel_id"], str):
             return False
+    
+    if not isinstance(data["youtube_channels"], dict): return False
+    for guild_id, channels in data["youtube_channels"].items():
+        if not isinstance(guild_id, str) or not isinstance(channels, dict): return False
+        for youtube_id, config in channels.items():
+            if not isinstance(youtube_id, str) or not isinstance(config, dict): return False
+            if "notification_channel_id" not in config or not isinstance(config["notification_channel_id"], str): return False
+            if "last_video_id" not in config: return False
     
     return True
 
@@ -51,18 +60,14 @@ def backup_data_sync():
         logger.error(f"❌ Erro no backup: {str(e)}")
 
 async def migrate_old_data(data: Dict[str, Any]) -> Dict[str, Any]:
-    if "streamers" in data and "configs" in data:
+    if "streamers" in data and "configs" in data and "youtube_channels" in data:
         return data
     
     new_data = {
-        "streamers": {},
-        "configs": {}
+        "streamers": data.get("streamers", {}),
+        "configs": data.get("configs", {}),
+        "youtube_channels": data.get("youtube_channels", {})
     }
-    
-    for guild_id, streamers in data.items():
-        if isinstance(streamers, dict):
-            new_data["streamers"][guild_id] = streamers
-            new_data["configs"][guild_id] = {}
     
     return new_data
 
@@ -75,7 +80,7 @@ async def load_data_from_drive_if_exists(drive_service):
                 async with aiofiles.open(DATA_FILE, 'r', encoding='utf-8') as f:
                     content = (await f.read()).strip()
                 if not content:
-                    DATA_CACHE = {"streamers": {}, "configs": {}}
+                    DATA_CACHE = {"streamers": {}, "configs": {}, "youtube_channels": {}}
                     logger.warning("⚠️ Arquivo do Drive vazio, usando estrutura vazia")
                 else:
                     data = json.loads(content)
@@ -92,10 +97,10 @@ async def load_data_from_drive_if_exists(drive_service):
                         data = json.loads(content)
                         DATA_CACHE = await migrate_old_data(data)
                     else:
-                        DATA_CACHE = {"streamers": {}, "configs": {}}
+                        DATA_CACHE = {"streamers": {}, "configs": {}, "youtube_channels": {}}
                     logger.info("ℹ️ Dados carregados do arquivo local para cache")
                 else:
-                    DATA_CACHE = {"streamers": {}, "configs": {}}
+                    DATA_CACHE = {"streamers": {}, "configs": {}, "youtube_channels": {}}
                     logger.info("ℹ️ Nenhum arquivo de dados encontrado; cache inicializado vazio")
         except Exception as e:
             logger.error(f"❌ Falha ao carregar dados do Drive: {e}")
@@ -107,13 +112,13 @@ async def load_data_from_drive_if_exists(drive_service):
                         data = json.loads(content)
                         DATA_CACHE = await migrate_old_data(data)
                     else:
-                        DATA_CACHE = {"streamers": {}, "configs": {}}
+                        DATA_CACHE = {"streamers": {}, "configs": {}, "youtube_channels": {}}
                     logger.info("ℹ️ Fallback para arquivo local realizado")
                 else:
-                    DATA_CACHE = {"streamers": {}, "configs": {}}
+                    DATA_CACHE = {"streamers": {}, "configs": {}, "youtube_channels": {}}
             except Exception as e2:
                 logger.error(f"❌ Fallback local falhou: {e2}")
-                DATA_CACHE = {"streamers": {}, "configs": {}}
+                DATA_CACHE = {"streamers": {}, "configs": {}, "youtube_channels": {}}
 
 async def save_data_to_drive(data: Dict[str, Any], drive_service) -> None:
     global DATA_CACHE
