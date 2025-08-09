@@ -324,3 +324,15 @@ async def on_disconnect():
     logger.info("🔻 Iniciando shutdown limpo")
     if CHECK_TASK:
         CHECK_TASK.cancel()
+
+# Opcional: Adicione esta função se quiser forçar um salvamento via comando
+@bot.tree.command(name="save", description="Força um salvamento imediato no Drive")
+@app_commands.checks.has_permissions(administrator=True)
+async def save_command(interaction: discord.Interaction):
+    try:
+        data = await get_cached_data()
+        await set_cached_data(data, bot.drive_service, persist=True)
+        await interaction.response.send_message("✅ Dados salvos no Drive com sucesso!", ephemeral=True)
+    except Exception as e:
+        logger.error(f"Erro ao salvar manualmente: {e}")
+        await interaction.response.send_message("❌ Falha ao salvar no Drive!", ephemeral=True)
