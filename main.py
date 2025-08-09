@@ -16,18 +16,19 @@ from discord_bot import bot
 os.environ.setdefault('DISABLE_VOICE', 'true')
 
 print("╔════════════════════════════════════════════╗")
-print("║     BOT DE NOTIFICAÇÕES (TWITCH/YOUTUBE)   ║")
+print("║           SISTEMA T-800 ONLINE             ║")
+print("║    Monitoramento de Streams Ativado        ║")
 print("╚════════════════════════════════════════════╝")
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     handlers=[
-        logging.FileHandler("bot.log", encoding='utf-8'),
+        logging.FileHandler("t800.log", encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("T-800")
 
 # Variáveis obrigatórias
 REQUIRED_ENV = [
@@ -36,78 +37,55 @@ REQUIRED_ENV = [
     "DRIVE_CLIENT_ID", "YOUTUBE_API_KEY"
 ]
 
-# Verifica variáveis de ambiente
+# Verificação de variáveis
 missing = [v for v in REQUIRED_ENV if v not in os.environ]
 if missing:
-    logger.error(f"❌ Variáveis faltando: {missing}")
+    logger.error(f"❌ Componentes essenciais faltando: {missing}")
     sys.exit(1)
 
-# Servidor Flask
+# Servidor Flask para monitoramento
 app = Flask(__name__)
 START_TIME = datetime.now()
-HTTP_SESSION = None
 
-# Rotas HTTP (para evitar sleep no Render)
 @app.route('/')
-def health_check():
+def status():
     return jsonify({
         "status": "online",
-        "uptime": str(datetime.now() - START_TIME),
-        "bot": "running"
-    }), 200
-
-@app.route('/ping')
-def ping():
-    return jsonify({"status": "pong"}), 200
+        "mission": "Monitorar streams humanas",
+        "uptime": str(datetime.now() - START_TIME)
+    })
 
 def run_flask():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
 
-# Tarefa de salvamento automático
-async def auto_save_task(drive_service):
-    while True:
-        try:
-            await asyncio.sleep(300)  # 5 minutos
-            from data_manager import get_cached_data
-            data = await get_cached_data()
-            await save_data_to_drive(data, drive_service)
-            logger.info("🔄 Backup automático no Drive concluído")
-        except Exception as e:
-            logger.error(f"Erro no backup: {str(e)}")
-
-# Main async
 async def main_async():
-    global HTTP_SESSION
-    HTTP_SESSION = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
+    logger.info("Inicializando subsistemas...")
     
-    bot.twitch_api = TwitchAPI(HTTP_SESSION, os.environ["TWITCH_CLIENT_ID"], os.environ["TWITCH_CLIENT_SECRET"])
-    bot.youtube_api = YouTubeAPI(HTTP_SESSION, os.environ["YOUTUBE_API_KEY"])
-    bot.drive_service = GoogleDriveService()
-    
-    await load_data_from_drive_if_exists(bot.drive_service)
-
-    # Inicia tarefas em segundo plano
-    asyncio.create_task(auto_save_task(bot.drive_service))
-    threading.Thread(target=run_flask, daemon=True).start()
-
-    await bot.start(os.environ["DISCORD_TOKEN"])
-
-async def shutdown():
-    if HTTP_SESSION:
-        await HTTP_SESSION.close()
+    # Configurar APIs
+    async with aiohttp.ClientSession() as session:
+        bot.twitch_api = TwitchAPI(
+            session,
+            os.environ["TWITCH_CLIENT_ID"],
+            os.environ["TWITCH_CLIENT_SECRET"]
+        )
+        bot.youtube_api = YouTubeAPI(
+            session,
+            os.environ["YOUTUBE_API_KEY"]
+        )
+        bot.drive_service = GoogleDriveService()
+        
+        await load_data_from_drive_if_exists(bot.drive_service)
+        
+        # Iniciar servidor de monitoramento em thread separada
+        threading.Thread(target=run_flask, daemon=True).start()
+        
+        logger.info("Conectando à rede Discord...")
+        await bot.start(os.environ["DISCORD_TOKEN"])
 
 if __name__ == '__main__':
-    # Cria arquivo se não existir
-    if not os.path.exists("streamers.json"):
-        with open("streamers.json", 'w') as f:
-            f.write('{"streamers": {}, "youtube_channels": {}}')
-
     try:
         asyncio.run(main_async())
     except KeyboardInterrupt:
-        logger.info("👋 Desligado via Ctrl+C")
+        logger.info("⏹ Missão interrompida pelo usuário")
     except Exception as e:
-        logger.error(f"❌ Erro fatal: {str(e)}")
-    finally:
-        asyncio.run(shutdown())
+        logger.error(f"❌ Falha catastrófica: {str(e)}")
