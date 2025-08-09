@@ -44,37 +44,37 @@ CHECK_TASK = None
 # Componentes UI
 # --------------------------------------------------------------------------
 
-class AddStreamerDiscordModal(ui.Modal, title="Vincular Usuário Discord"):
-    discord_id = ui.TextInput(label="ID do Discord", placeholder="Digite o ID ou @mencione", min_length=3, max_length=32)
-
-    def __init__(self, twitch_username: str):
-        super().__init__()
-        self.twitch_username = twitch_username
+class AddStreamerTwitchModal(ui.Modal, title="Adicionar Streamer Twitch"):
+    twitch_name = ui.TextInput(
+        label="Nome na Twitch",
+        placeholder="ex: alanzoka",
+        min_length=3,
+        max_length=25,
+        style=discord.TextStyle.short
+    )
 
     async def on_submit(self, interaction: discord.Interaction):
         try:
-            discord_id = re.sub(r'\D', '', str(self.discord_id))
-            if not (17 <= len(discord_id) <= 19):
-                return await interaction.response.send_message("❌ ID inválido!", ephemeral=True)
-
-            member = interaction.guild.get_member(int(discord_id))
-            if not member:
-                return await interaction.response.send_message("❌ Membro não encontrado!", ephemeral=True)
-
-            data = await get_cached_data()
-            guild_id = str(interaction.guild.id)
+            username = str(self.twitch_name.value).lower().strip()  # Note: .value instead of casting directly
+            if not re.match(r'^[a-z0-9_]{3,25}$', username):
+                return await interaction.response.send_message(
+                    "❌ Nome inválido! Use apenas letras, números e underscores.",
+                    ephemeral=True
+                )
             
-            if guild_id not in data["streamers"]:
-                data["streamers"][guild_id] = {}
-
-            if self.twitch_username in data["streamers"][guild_id]:
-                return await interaction.response.send_message("⚠️ Streamer já vinculado!", ephemeral=True)
-
-            data["streamers"][guild_id][self.twitch_username] = discord_id
-            await set_cached_data(data, bot.drive_service, persist=True)
-
+            # Ensure the username doesn't contain any invalid characters
+            if any(c in username for c in "!@#$%^&*()+={}[]|\\:;\"'<>?,./ "):
+                return await interaction.response.send_message(
+                    "❌ Nome contém caracteres inválidos!",
+                    ephemeral=True
+                )
+            
+            await interaction.response.send_modal(AddStreamerDiscordModal(username))
+            
+        except Exception as e:
+            logger.error(f"Erro no modal Twitch: {str(e)}")
             await interaction.response.send_message(
-                f"✅ {member.mention} vinculado a `{self.twitch_username}`",
+                "❌ Ocorreu um erro ao processar seu pedido.",
                 ephemeral=True
             )
         except Exception as e:
