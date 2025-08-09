@@ -82,7 +82,7 @@ async def main_async():
     HTTP_SESSION = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
     
     bot.twitch_api = TwitchAPI(HTTP_SESSION, os.environ["TWITCH_CLIENT_ID"], os.environ["TWITCH_CLIENT_SECRET"])
-    bot.youtube_api = YouTubeAPI(HTTP_SESSION, os.environ["YOUTUBE_API_KEY"]) # Nova linha
+    bot.youtube_api = YouTubeAPI(HTTP_SESSION, os.environ["YOUTUBE_API_KEY"])
     bot.drive_service = GoogleDriveService()
     
     await load_data_from_drive_if_exists(bot.drive_service)
@@ -101,7 +101,7 @@ if __name__ == '__main__':
     # Cria arquivo se não existir
     if not os.path.exists("streamers.json"):
         with open("streamers.json", 'w') as f:
-            f.write('{"streamers": {}, "youtube_channels": {}}') # Linha corrigida
+            f.write('{"streamers": {}, "youtube_channels": {}}')
 
     try:
         asyncio.run(main_async())
