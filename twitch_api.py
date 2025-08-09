@@ -43,19 +43,6 @@ class TwitchAPI:
             logger.error("❌ Não foi possível obter token da Twitch após tentativas")
             return None
 
-    async def validate_streamer(self, username: str) -> bool:
-        token = await self.get_token()
-        if not token: return False
-        headers = {"Client-ID": self.client_id, "Authorization": f"Bearer {token}"}
-        try:
-            url = f"https://api.twitch.tv/helix/users?login={username}"
-            async with self.session.get(url, headers=headers, timeout=15) as resp:
-                data = await resp.json()
-                return len(data.get("data", [])) > 0
-        except Exception as e:
-            logger.error(f"Erro ao validar streamer '{username}': {e}")
-            return False
-
     async def check_live_streams(self, usernames):
         token = await self.get_token()
         if not token: return set()
