@@ -11,7 +11,7 @@ from flask import Flask, jsonify
 from drive_service import GoogleDriveService
 from twitch_api import TwitchAPI
 from data_manager import load_data_from_drive_if_exists
-from discord_bot import bot, run_discord_bot
+from discord_bot import bot
 
 os.environ.setdefault('DISABLE_VOICE', 'true')
 
@@ -56,7 +56,7 @@ def run_flask():
 
 HTTP_SESSION = None
 
-async def initialize_services():
+async def main_async():
     global HTTP_SESSION
     if HTTP_SESSION is None:
         HTTP_SESSION = aiohttp.ClientSession()
@@ -66,23 +66,20 @@ async def initialize_services():
     
     await load_data_from_drive_if_exists(bot.drive_service)
 
-async def graceful_shutdown():
-    logger.info("🔻 Iniciando shutdown limpo")
-    if bot.CHECK_TASK:
-        bot.CHECK_TASK.cancel()
-    if HTTP_SESSION:
-        await HTTP_SESSION.close()
-        logger.info("✅ Sessão HTTP fechada")
-    await asyncio.sleep(0.5)
+    # Inicia o Flask em uma thread separada
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+
+    # Inicia o bot do Discord
+    await bot.start(os.environ["DISCORD_TOKEN"])
 
 if __name__ == '__main__':
+    # Cria o arquivo de dados inicial se não existir
     if not os.path.exists("streamers.json"):
         with open("streamers.json", 'w', encoding='utf-8') as f:
             f.write("{}")
 
-    asyncio.run(initialize_services())
-    
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-    
-    run_discord_bot(os.environ["DISCORD_TOKEN"])
+    try:
+        asyncio.run(main_async())
+    except Exception as e:
+        logger.error(f"❌ Ocorreu um erro fatal: {e}")
