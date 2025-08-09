@@ -6,10 +6,11 @@ import logging
 import aiohttp
 from datetime import datetime
 from flask import Flask, jsonify
+
 from drive_service import GoogleDriveService
 from twitch_api import TwitchAPI
-from data_manager import load_data_from_drive_if_exists, save_data_to_drive
-from discord_bot import bot
+from data_manager import load_data_from_drive_if_exists, save_data_to_drive, get_cached_data
+from discord_bot import bot # Importa a instância do bot
 
 # Configuração inicial
 os.environ.setdefault('DISABLE_VOICE', 'true')
@@ -68,7 +69,6 @@ async def auto_save_task(drive_service):
     while True:
         try:
             await asyncio.sleep(300)  # 5 minutos
-            from data_manager import get_cached_data
             data = await get_cached_data()
             await save_data_to_drive(data, drive_service)
             logger.info("🔄 Backup automático no Drive concluído")
@@ -80,6 +80,7 @@ async def main_async():
     global HTTP_SESSION
     HTTP_SESSION = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
     
+    # Configura o bot com as instâncias necessárias
     bot.twitch_api = TwitchAPI(HTTP_SESSION, os.environ["TWITCH_CLIENT_ID"], os.environ["TWITCH_CLIENT_SECRET"])
     bot.drive_service = GoogleDriveService()
     
@@ -89,6 +90,7 @@ async def main_async():
     asyncio.create_task(auto_save_task(bot.drive_service))
     threading.Thread(target=run_flask, daemon=True).start()
 
+    # Inicia o bot
     await bot.start(os.environ["DISCORD_TOKEN"])
 
 async def shutdown():
