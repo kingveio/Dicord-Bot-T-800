@@ -34,7 +34,7 @@ class StreamBot(commands.Bot):
             intents=intents,
             activity=discord.Activity(
                 type=discord.ActivityType.watching,
-                name="Streamers e Youtubers"
+                name="Exterminador do Futuro 2"
             )
         )
         self.start_time = datetime.now()
