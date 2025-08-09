@@ -17,7 +17,7 @@ DATA_CACHE = {
     "youtube_channels": {}
 }
 DATA_LOCK = asyncio.Lock()
-DATA_FILE = "streamers.json" # O nome do arquivo pode ser alterado, mas vamos manter por enquanto
+DATA_FILE = "streamers.json"
 AUTO_SAVE_INTERVAL = 300  # 5 minutos em segundos
 
 def validate_data_structure_sync(data: Dict[str, Any]) -> bool:
@@ -87,7 +87,6 @@ async def load_data_from_drive_if_exists(drive_service) -> None:
         
         logger.info(f"Data Cache inicializada: {DATA_CACHE}")
 
-
 async def save_data_to_drive(data: Dict[str, Any], drive_service) -> None:
     global DATA_CACHE
     async with DATA_LOCK:
@@ -103,7 +102,6 @@ async def save_data_to_drive(data: Dict[str, Any], drive_service) -> None:
             logger.info(f"📤 Upload concluído (file id: {file_id})")
         except Exception as e:
             logger.error(f"❌ Falha ao enviar para o Google Drive: {e}")
-
 
 async def get_cached_data() -> Dict[str, Any]:
     async with DATA_LOCK:
