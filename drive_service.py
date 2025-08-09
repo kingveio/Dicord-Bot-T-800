@@ -1,117 +1,39 @@
 import os
-import io
 import logging
-from typing import Optional, Dict, Any
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
-from googleapiclient.errors import HttpError
+from googleapiclient.http import MediaFileUpload
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("T-800-DRIVE")
 
-class GoogleDriveService:
+class DriveService:
     def __init__(self):
-        self.SCOPES = ['https://www.googleapis.com/auth/drive']
-        self.service_account_info = self._get_service_account_info()
-        self.service = self._authenticate()
-        self.timeout = 30
-
-    def _get_service_account_info(self) -> Dict[str, Any]:
-        private_key = os.environ["DRIVE_PRIVATE_KEY"]
-        
-        if '\\n' in private_key:
-            private_key = private_key.replace('\\n', '\n')
-        elif not private_key.startswith('-----BEGIN PRIVATE KEY-----'):
-            private_key = '-----BEGIN PRIVATE KEY-----\n' + private_key + '\n-----END PRIVATE KEY-----'
-        
-        return {
-            "type": "service_account",
-            "project_id": os.environ.get("DRIVE_PROJECT_ID", "bot-t-800"),
-            "private_key_id": os.environ["DRIVE_PRIVATE_KEY_ID"],
-            "private_key": private_key,
-            "client_email": os.environ.get("DRIVE_CLIENT_EMAIL", "discord-bot-t-800@bot-t-800.iam.gserviceaccount.com"),
-            "client_id": os.environ["DRIVE_CLIENT_ID"],
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{os.environ.get('DRIVE_CLIENT_EMAIL', 'discord-bot-t-800@bot-t-800.iam.gserviceaccount.com')}"
-        }
+        self.creds = self._authenticate()
+        self.service = build('drive', 'v3', credentials=self.creds)
 
     def _authenticate(self):
-        creds = service_account.Credentials.from_service_account_info(
-            self.service_account_info, scopes=self.SCOPES
-        )
-        return build('drive', 'v3', credentials=creds, cache_discovery=False, static_discovery=False)
-
-    def find_file(self, file_name: str) -> Optional[Dict[str, Any]]:
-        query = f"name='{file_name}' and trashed=false and '{os.environ['DRIVE_FOLDER_ID']}' in parents"
         try:
-            results = self.service.files().list(
-                q=query,
-                spaces='drive',
-                fields='nextPageToken, files(id, name)',
-                pageSize=1
-            ).execute()
-            items = results.get('files', [])
-            return items[0] if items else None
-        except HttpError as e:
-            logger.error(f"Erro ao buscar arquivo no Drive: {e}")
-            return None
-
-    def download_file(self, file_name: str, local_path: str) -> bool:
-        file_info = self.find_file(file_name)
-        if not file_info:
-            logger.info(f"Arquivo '{file_name}' não encontrado no Google Drive.")
-            return False
-
-        request = self.service.files().get_media(fileId=file_info['id'])
-        file_handle = io.BytesIO()
-        downloader = MediaIoBaseDownload(file_handle, request)
-        done = False
-        try:
-            while done is False:
-                status, done = downloader.next_chunk()
-            file_handle.seek(0)
-            with open(local_path, 'wb') as f:
-                f.write(file_handle.read())
-            logger.info(f"✅ Download de '{file_name}' concluído.")
-            return True
-        except HttpError as e:
-            logger.error(f"Erro ao baixar arquivo do Drive: {e}")
-            return False
+            creds = service_account.Credentials.from_service_account_info({
+                # Configurações de autenticação
+            })
+            return creds
         except Exception as e:
-            logger.error(f"Erro inesperado ao baixar arquivo: {e}")
-            return False
+            logger.critical(f"FALHA NA AUTENTICAÇÃO: {str(e)}")
+            raise
 
-    def upload_file(self, file_path: str, file_name: str) -> Optional[str]:
+    def upload_file(self, file_path: str) -> bool:
         try:
             file_metadata = {
-                'name': file_name,
+                'name': os.path.basename(file_path),
                 'parents': [os.environ['DRIVE_FOLDER_ID']]
             }
-            media = MediaFileUpload(
-                file_path,
-                mimetype='application/json',
-                resumable=True
-            )
-            
-            existing = self.find_file(file_name)
-            if existing:
-                file = self.service.files().update(
-                    fileId=existing['id'],
-                    media_body=media
-                ).execute()
-            else:
-                file = self.service.files().create(
-                    body=file_metadata,
-                    media_body=media,
-                    fields='id'
-                ).execute()
-                
-            return file.get('id')
-        except HttpError as e:
-            logger.error(f"Erro ao enviar arquivo para o Drive: {e}")
-            return None
+            media = MediaFileUpload(file_path)
+            self.service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields='id'
+            ).execute()
+            return True
         except Exception as e:
-            logger.error(f"Erro inesperado ao enviar arquivo: {e}")
-            return None
+            logger.error(f"FALHA NO UPLOAD: {str(e)}")
+            return False
