@@ -8,9 +8,10 @@ from datetime import datetime
 from flask import Flask, jsonify
 from drive_service import GoogleDriveService
 from twitch_api import TwitchAPI
-from data_manager import load_data_from_drive_if_exists
+from data_manager import load_data_from_drive_if_exists, save_data_to_drive
 from discord_bot import bot
 
+# Configuração inicial
 os.environ.setdefault('DISABLE_VOICE', 'true')
 
 print("╔════════════════════════════════════════════╗")
@@ -27,20 +28,25 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Variáveis obrigatórias
 REQUIRED_ENV = [
     "DISCORD_TOKEN", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET",
     "DRIVE_FOLDER_ID", "DRIVE_PRIVATE_KEY_ID", "DRIVE_PRIVATE_KEY",
     "DRIVE_CLIENT_ID"
 ]
+
+# Verifica variáveis de ambiente
 missing = [v for v in REQUIRED_ENV if v not in os.environ]
 if missing:
-    logger.error("❌ Variáveis de ambiente faltando: %s", missing)
+    logger.error(f"❌ Variáveis faltando: {missing}")
     sys.exit(1)
 
+# Servidor Flask
 app = Flask(__name__)
 START_TIME = datetime.now()
 HTTP_SESSION = None
 
+# Rotas HTTP (para evitar sleep no Render)
 @app.route('/')
 def health_check():
     return jsonify({
@@ -49,56 +55,57 @@ def health_check():
         "bot": "running"
     }), 200
 
+@app.route('/ping')
+def ping():
+    return jsonify({"status": "pong"}), 200
+
 def run_flask():
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
-async def start_auto_save(drive_service):
-    """Inicia o salvamento automático periódico"""
-    from data_manager import get_cached_data, save_data_to_drive
+# Tarefa de salvamento automático
+async def auto_save_task(drive_service):
     while True:
         try:
-            await asyncio.sleep(int(os.environ.get("AUTO_SAVE_INTERVAL", "300")))
+            await asyncio.sleep(300)  # 5 minutos
+            from data_manager import get_cached_data
             data = await get_cached_data()
             await save_data_to_drive(data, drive_service)
-            logger.info("🔄 Salvamento automático no Drive concluído")
+            logger.info("🔄 Backup automático no Drive concluído")
         except Exception as e:
-            logger.error(f"Erro no salvamento automático: {e}")
+            logger.error(f"Erro no backup: {str(e)}")
 
+# Main async
 async def main_async():
     global HTTP_SESSION
-    if HTTP_SESSION is None:
-        timeout = aiohttp.ClientTimeout(total=30)
-        HTTP_SESSION = aiohttp.ClientSession(timeout=timeout)
+    HTTP_SESSION = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
     
     bot.twitch_api = TwitchAPI(HTTP_SESSION, os.environ["TWITCH_CLIENT_ID"], os.environ["TWITCH_CLIENT_SECRET"])
     bot.drive_service = GoogleDriveService()
     
     await load_data_from_drive_if_exists(bot.drive_service)
 
-    # Inicia o salvamento automático em segundo plano
-    asyncio.create_task(start_auto_save(bot.drive_service))
-
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
+    # Inicia tarefas em segundo plano
+    asyncio.create_task(auto_save_task(bot.drive_service))
+    threading.Thread(target=run_flask, daemon=True).start()
 
     await bot.start(os.environ["DISCORD_TOKEN"])
 
 async def shutdown():
-    global HTTP_SESSION
     if HTTP_SESSION:
         await HTTP_SESSION.close()
 
 if __name__ == '__main__':
+    # Cria arquivo se não existir
     if not os.path.exists("streamers.json"):
-        with open("streamers.json", 'w', encoding='utf-8') as f:
-            f.write("{}")
+        with open("streamers.json", 'w') as f:
+            f.write('{"streamers": {}, "configs": {}}')
 
     try:
         asyncio.run(main_async())
     except KeyboardInterrupt:
-        logger.info("👋 Desligando via KeyboardInterrupt")
+        logger.info("👋 Desligado via Ctrl+C")
     except Exception as e:
-        logger.error(f"❌ Ocorreu um erro fatal: {e}")
+        logger.error(f"❌ Erro fatal: {str(e)}")
     finally:
         asyncio.run(shutdown())
