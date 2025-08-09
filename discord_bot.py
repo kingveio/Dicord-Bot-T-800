@@ -10,7 +10,7 @@ import discord
 from discord.ext import commands
 from discord import app_commands, ui
 
-# Configuração inicial
+# Configuração básica de logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -21,12 +21,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Intents necessários
+# Configuração do bot
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 
-# Inicialização do Bot
 bot = commands.Bot(
     command_prefix="!",
     intents=intents,
@@ -41,9 +40,9 @@ START_TIME = datetime.now()
 CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL", 300))  # 5 minutos
 CHECK_TASK = None
 
-# ---------------------------------------------------------------------------- #
-#                                  COMPONENTES                                 #
-# ---------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------
+# Componentes UI
+# --------------------------------------------------------------------------
 
 class AddStreamerDiscordModal(ui.Modal, title="Vincular Usuário Discord"):
     discord_id = ui.TextInput(label="ID do Discord", placeholder="Digite o ID ou @mencione", min_length=3, max_length=32)
@@ -106,22 +105,54 @@ class StreamersView(ui.View):
 
     @ui.button(label="Remover", style=discord.ButtonStyle.red, emoji="➖", custom_id="remove_streamer")
     async def remove_button(self, interaction: discord.Interaction, button: ui.Button):
-        # Implementação existente...
-        pass
+        data = await get_cached_data()
+        guild_streamers = data.get("streamers", {}).get(str(interaction.guild.id), {})
+        
+        if not guild_streamers:
+            return await interaction.response.send_message("❌ Nenhum streamer vinculado!", ephemeral=True)
+
+        options = [
+            discord.SelectOption(label=name, description=f"Vinculado a: {discord_id}")
+            for name, discord_id in guild_streamers.items()
+        ]
+
+        select = ui.Select(placeholder="Selecione para remover...", options=options)
+
+        async def callback(inner_interaction: discord.Interaction):
+            selected = select.values[0]
+            data = await get_cached_data()
+            del data["streamers"][str(inner_interaction.guild.id)][selected]
+            await set_cached_data(data, bot.drive_service, persist=True)
+            await inner_interaction.response.send_message(f"✅ {selected} removido!", ephemeral=True)
+
+        select.callback = callback
+        view = ui.View().add_item(select)
+        await interaction.response.send_message("Selecione para remover:", view=view, ephemeral=True)
 
     @ui.button(label="Listar", style=discord.ButtonStyle.blurple, emoji="📜", custom_id="list_streamers")
     async def list_button(self, interaction: discord.Interaction, button: ui.Button):
-        # Implementação existente...
-        pass
+        data = await get_cached_data()
+        guild_streamers = data.get("streamers", {}).get(str(interaction.guild.id), {})
 
-# ---------------------------------------------------------------------------- #
-#                                   COMANDOS                                   #
-# ---------------------------------------------------------------------------- #
+        embed = discord.Embed(title="📋 Streamers Vinculados", color=0x9147FF)
+        for name, discord_id in guild_streamers.items():
+            member = interaction.guild.get_member(int(discord_id))
+            embed.add_field(
+                name=f"🔹 {name}",
+                value=f"Discord: {member.mention if member else '❌ Não encontrado'}",
+                inline=False
+            )
 
-@bot.tree.command(name="streamers", description="Painel de gerenciamento")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+# --------------------------------------------------------------------------
+# Comandos
+# --------------------------------------------------------------------------
+
+@bot.tree.command(name="streamers", description="Gerenciar streamers vinculados")
 @app_commands.checks.has_permissions(administrator=True)
-async def streamers_panel(interaction: discord.Interaction):
-    """Painel principal de streamers"""
+async def streamers_command(interaction: discord.Interaction):
+    """Painel de gerenciamento de streamers"""
     try:
         if not interaction.guild.me.guild_permissions.manage_roles:
             return await interaction.response.send_message(
@@ -138,14 +169,29 @@ async def streamers_panel(interaction: discord.Interaction):
         logger.error(f"Erro no /streamers: {str(e)}")
         await interaction.response.send_message("❌ Erro ao abrir painel!", ephemeral=True)
 
+@bot.tree.command(name="status", description="Verificar status do bot")
+async def status_command(interaction: discord.Interaction):
+    """Mostra o status atual do bot"""
+    uptime = datetime.now() - START_TIME
+    data = await get_cached_data()
+    
+    embed = discord.Embed(title="🤖 Status do Bot", color=0x00FF00)
+    embed.add_field(name="⏱ Uptime", value=str(uptime).split('.')[0], inline=False)
+    embed.add_field(name="📊 Streamers", value=f"{sum(len(g) for g in data.get('streamers', {}).values())} em {len(data.get('streamers', {}))} servidores", inline=False)
+    embed.add_field(name="📶 Latência", value=f"{round(bot.latency * 1000, 2)}ms", inline=True)
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
 @bot.command()
 @commands.is_owner()
 async def debug(ctx):
-    """🔧 Mostra informações técnicas do bot (Apenas dono)"""
+    """🔧 Mostra informações técnicas detalhadas (apenas dono)"""
     try:
+        data = await get_cached_data()
+        
         embed = discord.Embed(
-            title="🤖 DEBUG - Status Completo",
-            color=0x00FFFF,
+            title="🛠️ DEBUG - Informações Técnicas",
+            color=0xFFA500,
             timestamp=datetime.now()
         )
         
@@ -153,56 +199,62 @@ async def debug(ctx):
         embed.add_field(name="🕒 Uptime", value=str(datetime.now() - START_TIME).split('.')[0], inline=False)
         embed.add_field(name="📶 Latência", value=f"{round(bot.latency * 1000, 2)}ms", inline=True)
         embed.add_field(name="📊 Servidores", value=len(bot.guilds), inline=True)
-        embed.add_field(name="⚙ Comandos", value=len(bot.commands), inline=True)
         
-        # Informações de sistema
-        embed.add_field(name="🐍 Python", value=sys.version.split()[0], inline=True)
-        embed.add_field(name="📁 Diretório", value=os.getcwd(), inline=False)
-        
-        # Informações específicas do bot
-        data = await get_cached_data()
+        # Informações de streamers
         total_streamers = sum(len(g) for g in data.get("streamers", {}).values())
         embed.add_field(name="🎮 Streamers", value=f"{total_streamers} em {len(data.get('streamers', {}))} servidores", inline=False)
         
-        embed.set_footer(text=f"Bot ID: {bot.user.id}")
+        # Informações de sistema
+        embed.add_field(name="🐍 Python", value=sys.version.split()[0], inline=True)
+        embed.add_field(name="💾 Memória", value=f"{sys.getsizeof(data) / 1024:.2f} KB", inline=True)
+        
         await ctx.send(embed=embed)
+        logger.info(f"Debug executado por {ctx.author.name}")
         
     except Exception as e:
         logger.error(f"Erro no debug: {str(e)}")
         await ctx.send("❌ Falha ao gerar relatório de debug!")
 
-# ---------------------------------------------------------------------------- #
-#                                   EVENTOS                                    #
-# ---------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------
+# Sistema de Cargos
+# --------------------------------------------------------------------------
 
-@bot.event
-async def on_ready():
-    logger.info(f"✅ Bot conectado como {bot.user} (ID: {bot.user.id})")
-    logger.info(f"📊 Em {len(bot.guilds)} servidores")
-    
+async def get_or_create_live_role(guild: discord.Guild) -> Optional[discord.Role]:
+    """Obtém ou cria o cargo 'Ao Vivo' com verificações robustas"""
     try:
-        synced = await bot.tree.sync()
-        logger.info(f"🔄 {len(synced)} comandos sincronizados")
+        # Verifica se já existe (case insensitive)
+        existing = discord.utils.find(lambda r: r.name.lower() == "ao vivo", guild.roles)
+        if existing:
+            return existing
+
+        # Cria novo cargo
+        if not guild.me.guild_permissions.manage_roles:
+            logger.error(f"Sem permissões em {guild.name}")
+            return None
+
+        role = await guild.create_role(
+            name="Ao Vivo",
+            color=discord.Color.purple(),
+            hoist=True,
+            mentionable=True,
+            reason="Criado automaticamente para streamers ao vivo"
+        )
+        
+        # Tenta posicionar o cargo corretamente
+        try:
+            await role.edit(position=guild.me.top_role.position - 1)
+        except:
+            pass
+            
+        return role
+        
     except Exception as e:
-        logger.error(f"❌ Erro ao sincronizar comandos: {str(e)}")
-    
-    # Inicia a tarefa de verificação
-    global CHECK_TASK
-    if CHECK_TASK is None or CHECK_TASK.done():
-        CHECK_TASK = bot.loop.create_task(check_streams_task())
+        logger.error(f"Erro ao criar cargo: {str(e)}")
+        return None
 
-@bot.event
-async def on_command_error(ctx, error):
-    if isinstance(error, commands.NotOwner):
-        await ctx.send("❌ Apenas o dono do bot pode usar este comando!")
-    elif isinstance(error, commands.MissingPermissions):
-        await ctx.send("⚠️ Você não tem permissão para usar este comando!")
-    else:
-        logger.error(f"Erro no comando {ctx.command}: {str(error)}")
-
-# ---------------------------------------------------------------------------- #
-#                                   TAREFAS                                   #
-# ---------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------
+# Verificação de Lives
+# --------------------------------------------------------------------------
 
 async def check_streams_task():
     """Verifica periodicamente os streamers ao vivo"""
@@ -211,19 +263,97 @@ async def check_streams_task():
     
     while not bot.is_closed():
         try:
-            # Implementação existente...
+            data = await get_cached_data()
+            all_streamers = {
+                s.lower() 
+                for g in data.get("streamers", {}).values() 
+                for s in g.keys()
+            }
+            
+            if not all_streamers:
+                await asyncio.sleep(CHECK_INTERVAL)
+                continue
+                
+            live_streamers = await bot.twitch_api.check_live_streams(all_streamers)
+
+            for guild_id, streamers in data.get("streamers", {}).items():
+                guild = bot.get_guild(int(guild_id))
+                if not guild:
+                    continue
+                    
+                live_role = await get_or_create_live_role(guild)
+                if not live_role:
+                    continue
+                    
+                for twitch_user, discord_id in streamers.items():
+                    try:
+                        member = guild.get_member(int(discord_id))
+                        if not member:
+                            continue
+                            
+                        is_live = twitch_user.lower() in live_streamers
+                        has_role = live_role in member.roles
+                        
+                        if is_live and not has_role:
+                            await member.add_roles(live_role)
+                            logger.info(f"➕ Cargo dado para {twitch_user}")
+                        elif not is_live and has_role:
+                            await member.remove_roles(live_role)
+                            logger.info(f"➖ Cargo removido de {twitch_user}")
+                            
+                    except Exception as e:
+                        logger.error(f"Erro em {twitch_user}: {str(e)}")
+                        
             await asyncio.sleep(CHECK_INTERVAL)
+            
         except Exception as e:
-            logger.error(f"Erro na task de lives: {str(e)}")
+            logger.error(f"Erro na verificação: {str(e)}")
             await asyncio.sleep(60)  # Espera antes de tentar novamente
 
-# ---------------------------------------------------------------------------- #
-#                                INICIALIZAÇÃO                                #
-# ---------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------
+# Eventos
+# --------------------------------------------------------------------------
+
+@bot.event
+async def on_ready():
+    """Executado quando o bot está pronto"""
+    logger.info(f"✅ Bot conectado como {bot.user} (ID: {bot.user.id})")
+    logger.info(f"📊 Conectado em {len(bot.guilds)} servidores")
+    
+    try:
+        synced = await bot.tree.sync()
+        logger.info(f"🔄 {len(synced)} comandos slash sincronizados")
+    except Exception as e:
+        logger.error(f"❌ Erro ao sincronizar comandos: {str(e)}")
+    
+    # Inicia a verificação de lives
+    global CHECK_TASK
+    if CHECK_TASK is None or CHECK_TASK.done():
+        CHECK_TASK = bot.loop.create_task(check_streams_task())
+
+@bot.event
+async def on_guild_join(guild):
+    """Executado quando o bot entra em um novo servidor"""
+    logger.info(f"➕ Entrou no servidor: {guild.name} (ID: {guild.id})")
+    await get_or_create_live_role(guild)
+
+@bot.event
+async def on_command_error(ctx, error):
+    """Tratamento de erros para comandos prefixados"""
+    if isinstance(error, commands.NotOwner):
+        await ctx.send("❌ Apenas o dono pode usar este comando!")
+    elif isinstance(error, commands.MissingPermissions):
+        await ctx.send("⚠️ Você não tem permissões suficientes!")
+    else:
+        logger.error(f"Erro no comando {ctx.command}: {str(error)}")
+
+# --------------------------------------------------------------------------
+# Inicialização
+# --------------------------------------------------------------------------
 
 def setup():
-    """Configurações iniciais"""
-    bot.add_view(StreamersView())  # Persistência da View
+    """Configuração inicial"""
+    bot.add_view(StreamersView())  # Para persistência de views
     logger.info("🛠️ Configuração inicial concluída")
 
 # Executa a configuração quando o arquivo é carregado
