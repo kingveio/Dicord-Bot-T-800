@@ -1,7 +1,7 @@
-discord.py
+discord.py>=2.3.2
 aiohttp==3.9.0
-google-api-python-client
-google-auth-httplib2
-google-auth-oauthlib
-flask
-aiofiles
+google-api-python-client==2.108.0
+google-auth-httplib2==0.1.1
+google-auth-oauthlib==1.1.0
+flask==3.0.0
+aiofiles==23.2.1
