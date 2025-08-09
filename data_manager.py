@@ -140,3 +140,14 @@ async def set_cached_data(new_data: Dict[str, Any], drive_service, persist: bool
         DATA_CACHE = new_data
     if persist:
         await save_data_to_drive(new_data, drive_service)
+
+async def start_auto_save(drive_service: GoogleDriveService):
+    """Inicia o salvamento automático periódico"""
+    while True:
+        try:
+            await asyncio.sleep(int(os.environ.get("AUTO_SAVE_INTERVAL", "300")))  # Default 5 minutos
+            data = await get_cached_data()
+            await save_data_to_drive(data, drive_service)
+            logger.info("🔄 Salvamento automático no Drive concluído")
+        except Exception as e:
+            logger.error(f"Erro no salvamento automático: {e}")
