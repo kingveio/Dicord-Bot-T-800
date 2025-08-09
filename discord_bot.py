@@ -20,7 +20,7 @@ intents.message_content = True
 bot = commands.Bot(
     command_prefix="!",
     intents=intents,
-    activity=discord.Activity(type=discord.ActivityType.watching, name="Streamers da Twitch")
+    activity=discord.Activity(type=discord.ActivityType.watching, name="Exterminador do Futuro 2")
 )
 
 twitch_api: TwitchAPI = None
