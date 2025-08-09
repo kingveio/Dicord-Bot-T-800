@@ -14,7 +14,6 @@ from drive_service import GoogleDriveService
 
 logger = logging.getLogger(__name__)
 
-# Configurações do bot, intents, etc.
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
@@ -24,14 +23,12 @@ bot = commands.Bot(
     activity=discord.Activity(type=discord.ActivityType.watching, name="Streamers da Twitch")
 )
 
-# Variáveis que serão inicializadas por main.py
 twitch_api: TwitchAPI = None
 drive_service: GoogleDriveService = None
 START_TIME = datetime.now()
 CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL", 55))
 CHECK_TASK = None
 
-# Funções utilitárias
 async def get_or_create_live_role(guild: discord.Guild):
     role = discord.utils.get(guild.roles, name="Ao Vivo")
     if role: return role
@@ -52,7 +49,6 @@ def sanitize_discord_id(input_str: str) -> str:
     if not digits.isdigit() or not (17 <= len(digits) <= 19): return ""
     return digits
 
-# UI e Comandos
 class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
     twitch_name = ui.TextInput(label="Nome na Twitch", placeholder="ex: alanzoka", min_length=3, max_length=25)
     discord_id = ui.TextInput(label="ID/Menção do Discord", placeholder="Digite o ID ou @usuário", min_length=3, max_length=32)
@@ -66,10 +62,6 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
             twitch_username = self.twitch_name.value.lower().strip()
             if not re.match(r'^[a-zA-Z0-9_]{3,25}$', twitch_username):
                 await interaction.response.send_message("❌ Nome inválido na Twitch! Use apenas letras, números e _", ephemeral=True)
-                return
-
-            if not await bot.twitch_api.validate_streamer(twitch_username):
-                await interaction.response.send_message(f"❌ Streamer '{twitch_username}' não encontrado na Twitch!", ephemeral=True)
                 return
 
             discord_input = self.discord_id.value.strip()
@@ -93,7 +85,7 @@ class AddStreamerModal(ui.Modal, title="Adicionar Streamer"):
                 return
 
             data[guild_id][twitch_username] = discord_id
-            await set_cached_data(data, bot.drive_service, persist=True)
+            await set_cached_data(data, drive_service, persist=True)
 
             await interaction.response.send_message(f"✅ {member.mention} vinculado ao Twitch: `{twitch_username}`", ephemeral=True)
 
@@ -138,7 +130,7 @@ class StreamersView(ui.View):
                 guild_id = str(inner_interaction.guild.id)
                 if selected in data_local.get(guild_id, {}):
                     del data_local[guild_id][selected]
-                    await set_cached_data(data_local, bot.drive_service, persist=True)
+                    await set_cached_data(data_local, drive_service, persist=True)
                     await inner_interaction.response.send_message(f"✅ Streamer '{selected}' removido!", ephemeral=True)
                 else:
                     await inner_interaction.response.send_message("❌ Streamer não encontrado (provavelmente já removido).", ephemeral=True)
@@ -166,7 +158,6 @@ class StreamersView(ui.View):
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# Comandos do bot
 @bot.tree.command(name="streamers", description="Gerenciar streamers vinculados")
 @app_commands.checks.has_permissions(administrator=True)
 async def streamers_command(interaction: discord.Interaction):
@@ -183,7 +174,6 @@ async def status_command(interaction: discord.Interaction):
     embed.add_field(name="🔄 Última verificação", value=datetime.now().strftime("%Y-%m-%d %H:%M:%S"), inline=False)
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# Task de verificação
 async def check_streams_task():
     await bot.wait_until_ready()
     logger.info("✅ Task de checagem iniciada")
@@ -200,40 +190,44 @@ async def check_streams_task():
                 await asyncio.sleep(CHECK_INTERVAL)
                 continue
             
-            live_streamers = await bot.twitch_api.check_live_streams(all_streamers)
+            live_streamers = await twitch_api.check_live_streams(all_streamers)
 
             for guild_id, streamers in data.items():
-                guild = bot.get_guild(int(guild_id))
-                if not guild: continue
-                live_role = await get_or_create_live_role(guild)
-                if live_role is None: continue
-                
-                for twitch_user, discord_id in streamers.items():
-                    try:
-                        member = guild.get_member(int(discord_id))
-                        if not member: continue
-                        is_live = twitch_user.lower() in live_streamers
-                        has_role = live_role in member.roles
-                        
-                        if is_live and not has_role:
-                            await member.add_roles(live_role)
-                            channel = guild.system_channel or discord.utils.get(guild.text_channels, name="geral")
-                            if channel:
-                                await channel.send(
-                                    f"🎥 {member.mention} está ao vivo na Twitch como `{twitch_user}`!",
-                                    allowed_mentions=discord.AllowedMentions(users=True)
-                                )
-                        elif not is_live and has_role:
-                            await member.remove_roles(live_role)
-                    except Exception as e:
-                        logger.error(f"Erro ao atualizar cargo para {twitch_user} ({discord_id}): {e}")
+                try:
+                    guild = bot.get_guild(int(guild_id))
+                    if not guild: continue
+                    live_role = await get_or_create_live_role(guild)
+                    if live_role is None: continue
+                    
+                    for twitch_user, discord_id in streamers.items():
+                        try:
+                            member = guild.get_member(int(discord_id))
+                            if not member: continue
+                            is_live = twitch_user.lower() in live_streamers
+                            has_role = live_role in member.roles
+                            
+                            if is_live and not has_role:
+                                await member.add_roles(live_role)
+                                channel = guild.system_channel or discord.utils.get(guild.text_channels, name="geral")
+                                if channel:
+                                    await channel.send(
+                                        f"🎥 {member.mention} está ao vivo na Twitch como `{twitch_user}`!",
+                                        allowed_mentions=discord.AllowedMentions(users=True)
+                                    )
+                            elif not is_live and has_role:
+                                await member.remove_roles(live_role)
+                        except Exception as e:
+                            logger.error(f"Erro ao atualizar cargo para {twitch_user} ({discord_id}): {e}")
+                except ValueError as ve:
+                    logger.error(f"❌ Erro ao converter guild_id '{guild_id}' para int: {ve}")
+                    del data[guild_id]
+                    await set_cached_data(data, drive_service, persist=True)
 
         except Exception as e:
             logger.error(f"Erro no verificador principal: {e}")
 
         await asyncio.sleep(CHECK_INTERVAL)
 
-# Eventos
 @bot.event
 async def on_ready():
     logger.info(f"✅ Bot conectado como {bot.user}")
