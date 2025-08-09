@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Cache de dados global, agora centralizado
 DATA_CACHE = {
     "streamers": {},
     "configs": {}
@@ -51,6 +52,7 @@ def backup_data_sync():
         logger.error(f"❌ Erro no backup: {str(e)}")
 
 async def migrate_old_data(data: Dict[str, Any]) -> Dict[str, Any]:
+    # A migração é feita para garantir que a estrutura seja a nova, com "streamers" e "configs"
     if "streamers" in data and "configs" in data:
         return data
     
@@ -133,11 +135,16 @@ async def save_data_to_drive(data: Dict[str, Any], drive_service) -> None:
 
 async def get_cached_data() -> Dict[str, Any]:
     async with DATA_LOCK:
+        # Retorna uma cópia para evitar modificações diretas no cache
         return json.loads(json.dumps(DATA_CACHE))
 
 async def set_cached_data(new_data: Dict[str, Any], drive_service, persist: bool = True) -> None:
     global DATA_CACHE
     async with DATA_LOCK:
+        # Faz uma validação antes de substituir o cache
+        if not validate_data_structure_sync(new_data):
+            raise ValueError("Tentativa de salvar dados com estrutura inválida.")
         DATA_CACHE = new_data
     if persist:
+        # Persiste o novo estado no drive de forma assíncrona
         await save_data_to_drive(new_data, drive_service)
