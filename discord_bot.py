@@ -9,7 +9,7 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands, ui
 
-from data_manager import get_cached_data, set_cached_data, validate_data_structure_sync
+from data_manager import get_cached_data, set_cached_data
 from twitch_api import TwitchAPI
 from youtube_api import YouTubeAPI
 
@@ -47,7 +47,7 @@ class StreamBot(commands.Bot):
 bot = StreamBot()
 
 # --------------------------------------------------------------------------
-# Comandos do Bot
+# Comandos da Twitch
 # --------------------------------------------------------------------------
 
 @bot.tree.command(name="twitch_add", description="Vincula um usuário do Discord a um streamer da Twitch")
@@ -149,6 +149,9 @@ async def twitch_list_command(interaction: discord.Interaction):
         )
     await interaction.followup.send(embed=embed, ephemeral=True)
 
+# --------------------------------------------------------------------------
+# Comandos do YouTube
+# --------------------------------------------------------------------------
 
 @bot.tree.command(name="youtube_add", description="Adiciona um canal do YouTube para notificar novos vídeos e lives")
 @app_commands.describe(
@@ -395,6 +398,7 @@ async def check_youtube_channels():
 
             except Exception as e:
                 logger.error(f"❌ Erro ao verificar o canal do YouTube {youtube_id}: {e}")
+
 
 # --------------------------------------------------------------------------
 # Funções de Setup e Eventos
