@@ -72,6 +72,11 @@ async def main_async():
 
     await bot.start(os.environ["DISCORD_TOKEN"])
 
+async def shutdown():
+    global HTTP_SESSION
+    if HTTP_SESSION:
+        await HTTP_SESSION.close()
+
 if __name__ == '__main__':
     if not os.path.exists("streamers.json"):
         with open("streamers.json", 'w', encoding='utf-8') as f:
@@ -79,8 +84,9 @@ if __name__ == '__main__':
 
     try:
         asyncio.run(main_async())
+    except KeyboardInterrupt:
+        logger.info("👋 Desligando via KeyboardInterrupt")
     except Exception as e:
         logger.error(f"❌ Ocorreu um erro fatal: {e}")
     finally:
-        if HTTP_SESSION:
-            await HTTP_SESSION.close()
+        asyncio.run(shutdown())
