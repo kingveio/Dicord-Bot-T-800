@@ -17,11 +17,19 @@ class GoogleDriveService:
         self.timeout = 30  # seconds
 
     def _get_service_account_info(self) -> Dict[str, Any]:
+        private_key = os.environ["DRIVE_PRIVATE_KEY"]
+        
+        # Corrige a formatação da chave privada
+        if '\\n' in private_key:
+            private_key = private_key.replace('\\n', '\n')
+        elif not private_key.startswith('-----BEGIN PRIVATE KEY-----'):
+            private_key = '-----BEGIN PRIVATE KEY-----\n' + private_key + '\n-----END PRIVATE KEY-----'
+        
         return {
             "type": "service_account",
             "project_id": os.environ.get("DRIVE_PROJECT_ID", "bot-t-800"),
             "private_key_id": os.environ["DRIVE_PRIVATE_KEY_ID"],
-            "private_key": os.environ["DRIVE_PRIVATE_KEY"].replace('\\n', '\n'),
+            "private_key": private_key,
             "client_email": os.environ.get("DRIVE_CLIENT_EMAIL", "discord-bot-t-800@bot-t-800.iam.gserviceaccount.com"),
             "client_id": os.environ["DRIVE_CLIENT_ID"],
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
@@ -38,7 +46,8 @@ class GoogleDriveService:
             )
             return build('drive', 'v3', credentials=creds, cache_discovery=False)
         except Exception as e:
-            logger.error(f"Falha na autenticação com o Google Drive: {e}")
+            logger.error(f"Falha na autenticação com o Google Drive. Verifique suas credenciais.")
+            logger.error(f"Detalhes do erro: {str(e)}")
             raise
 
     def find_file(self, file_name: str) -> Optional[Dict[str, Any]]:
