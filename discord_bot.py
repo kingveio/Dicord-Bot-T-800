@@ -100,7 +100,7 @@ async def monitor_streams():
     """Verifica periodicamente os streamers monitorados."""
     logger.info("🔍 Análise de alvos iniciada...")
     try:
-        data = await get_cached_data()
+        data = await get_cached_data(bot.drive_service)
         if not data:
             logger.error("⚠️ Dados não carregados corretamente! Alerta: Falha na operação.")
             return
@@ -179,7 +179,7 @@ async def adicionar_twitch(
 ):
     await interaction.response.defer(ephemeral=True)
     try:
-        data = await get_cached_data()
+        data = await get_cached_data(bot.drive_service)
         guild_id = str(interaction.guild.id)
         
         if guild_id not in data.get("streamers", {}):
@@ -217,7 +217,7 @@ async def adicionar_youtube(
         if not youtube_id:
             return await interaction.followup.send("❌ Não foi possível encontrar o ID do canal do YouTube. Verifique a URL.", ephemeral=True)
 
-        data = await get_cached_data()
+        data = await get_cached_data(bot.drive_service)
         guild_id = str(interaction.guild.id)
         
         if guild_id not in data.get("youtube_channels", {}):
@@ -246,7 +246,7 @@ async def adicionar_youtube(
 async def remover_twitch(interaction: discord.Interaction, nome_twitch: str):
     await interaction.response.defer(ephemeral=True)
     try:
-        data = await get_cached_data()
+        data = await get_cached_data(bot.drive_service)
         guild_id = str(interaction.guild.id)
 
         if guild_id not in data.get("streamers", {}) or nome_twitch.lower() not in data["streamers"][guild_id]:
@@ -283,7 +283,7 @@ async def remover_youtube(interaction: discord.Interaction, url_canal: str):
         if not youtube_id:
             youtube_id = url_canal # Tenta o próprio input como ID se a conversão falhar
 
-        data = await get_cached_data()
+        data = await get_cached_data(bot.drive_service)
         guild_id = str(interaction.guild.id)
         
         if youtube_id in data.get("youtube_channels", {}).get(guild_id, {}):
@@ -306,7 +306,7 @@ async def remover_youtube(interaction: discord.Interaction, url_canal: str):
 @bot.tree.command(name="listar_alvos", description="Mostra a lista de alvos monitorados")
 async def listar_alvos(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-    data = await get_cached_data()
+    data = await get_cached_data(bot.drive_service)
     
     output = "🤖 **RELATÓRIO DE ALVOS**\n\n"
     guild_id = str(interaction.guild.id)
@@ -344,7 +344,7 @@ async def listar_alvos(interaction: discord.Interaction):
 async def status(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     uptime = datetime.now() - bot.start_time
-    data = await get_cached_data()
+    data = await get_cached_data(bot.drive_service)
     
     twitch_count = sum(len(g) for g in data.get("streamers", {}).values())
     youtube_count = sum(len(g) for g in data.get("youtube_channels", {}).values())
