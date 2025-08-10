@@ -1,18 +1,16 @@
 import asyncio
 import json
 import logging
-from typing import Dict
-from googleapiclient.errors import HttpError
+from typing import Dict, Any, Optional
 from drive_service import GoogleDriveService
 
-logger = logging.getLogger("T-800")
+logger = logging.getLogger(__name__)
 
-# Inicializa o serviço do Google Drive globalmente.
-# Isso garante que ele seja criado apenas uma vez.
+# Instância global do serviço do Google Drive
 drive_service = GoogleDriveService()
-DATA_FILE_PATH = "data.json"
+DATA_FILE = "streamers.json"
 
-# Estrutura de dados padrão caso o arquivo não exista.
+# Estrutura de dados padrão para quando o arquivo não existe
 DEFAULT_DATA = {
     "monitored_users": {
         "twitch": {},
@@ -20,32 +18,40 @@ DEFAULT_DATA = {
     }
 }
 
-async def get_data() -> Dict:
-    """Carrega os dados do Google Drive. Se não houver arquivo, retorna um dicionário padrão."""
+async def get_data() -> Dict[str, Any]:
+    """Carrega dados do Google Drive. Retorna dados padrão se o arquivo não existir."""
     try:
-        data = drive_service.download_file()
-        if data is None:
-            logger.warning("⚠️ Arquivo de dados não encontrado ou falha no download. Usando dados padrão.")
+        if not drive_service.service:
+            logger.warning("Serviço do Google Drive não disponível. Usando dados padrão.")
             return DEFAULT_DATA
+
+        data = await drive_service.download_file_to_memory(DATA_FILE)
+        if data is None:
+            logger.info("Arquivo de dados não encontrado no Drive. Usando dados padrão.")
+            return DEFAULT_DATA
+        
+        # Validar e atualizar a estrutura se necessário
+        if not all(k in data["monitored_users"] for k in ["twitch", "youtube"]):
+            data["monitored_users"] = DEFAULT_DATA["monitored_users"]
+            logger.warning("Estrutura de dados desatualizada. Usando formato padrão.")
+        
+        logger.info("Dados carregados com sucesso do Google Drive.")
         return data
+        
     except Exception as e:
-        logger.error(f"❌ Erro ao carregar dados: {e}")
+        logger.error(f"❌ Erro ao carregar dados do Drive: {e}")
         return DEFAULT_DATA
 
-async def save_data(data: Dict):
+async def save_data(data: Dict[str, Any]):
     """Salva os dados no Google Drive."""
     try:
-        # Serializa os dados em JSON.
-        json_data = json.dumps(data, indent=4)
-        
-        # Chama o serviço do Drive para criar ou atualizar o arquivo.
-        file_id = drive_service.create_or_update_file(json_data)
-        if file_id:
-            logger.info("✅ Dados salvos com sucesso no Google Drive.")
-        else:
-            logger.error("❌ Falha ao salvar os dados no Google Drive.")
+        if not drive_service.service:
+            logger.warning("Serviço do Google Drive não disponível. Dados não serão salvos.")
+            return
             
-    except HttpError as error:
-        logger.error(f"❌ Erro HTTP ao salvar dados: {error}")
+        json_data = json.dumps(data, indent=2)
+        await drive_service.upload_file_from_memory(json_data, DATA_FILE)
+        
+        logger.info("✅ Dados salvos com sucesso no Google Drive.")
     except Exception as e:
-        logger.error(f"❌ Erro inesperado ao salvar dados: {e}")
+        logger.error(f"❌ Erro ao salvar dados no Drive: {e}")
