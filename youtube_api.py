@@ -58,21 +58,30 @@ class YouTubeAPI:
         
         return None
 
-    async def is_channel_live(self, channel_id: str) -> bool:
-        """Verifica se um canal está ao vivo."""
-        api_url = 'https://www.googleapis.com/youtube/v3/search'
-        params = {
-            'key': self.api_key,
-            'channelId': channel_id,
-            'part': 'snippet',
-            'eventType': 'live',
-            'type': 'video'
-        }
-        try:
-            async with self.session.get(api_url, params=params) as response:
-                response.raise_for_status()
-                data = await response.json()
-                return len(data.get('items', [])) > 0
-        except Exception as e:
-            logger.error(f"❌ Erro ao verificar live do canal {channel_id}: {e}")
-            return False
+    async def _search_channel_by_query(self, query: str, search_type: str) -> Optional[str]:
+    api_url = "https://www.googleapis.com/youtube/v3/search"
+    params = {
+        'part': 'snippet',
+        'q': query,
+        'type': search_type,
+        'maxResults': 1,
+        'key': self.api_key
+    }
+    try:
+        if self.session is None or self.session.closed:
+            self.session = aiohttp.ClientSession()
+        
+        async with self.session.get(api_url, params=params) as response:
+            response.raise_for_status()
+            data = await response.json()
+            
+            if data.get('items'):
+                return data['items'][0]['snippet']['channelId']
+    except aiohttp.ClientError as e:
+        logger.error(f"❌ Erro ao buscar ID do canal '{query}' na API do YouTube: {e}")
+    except asyncio.TimeoutError:
+        logger.error(f"❌ Requisição de busca de canal '{query}' expirou.")
+    except Exception as e:
+        logger.error(f"❌ Erro inesperado ao buscar ID do canal '{query}': {e}")
+    
+    return None
