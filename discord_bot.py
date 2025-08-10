@@ -3,9 +3,10 @@ from discord.ext import commands, tasks
 from discord import app_commands
 import logging
 from datetime import datetime
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 import os
 import asyncio
+from data_manager import get_data, update_monitored_users
 
 # Configuração T-800
 intents = discord.Intents.default()
@@ -26,52 +27,57 @@ class T800Bot(commands.Bot):
         self.live_role = "AO VIVO"
         self.system_ready = False
         self.synced = False
+        self.monitored_users = {
+            "twitch": {},
+            "youtube": {}
+        }
 
 bot = T800Bot()
 
 @bot.event
 async def setup_hook():
-    """Configura o owner_id corretamente durante a inicialização"""
-    # Tenta obter o ID do dono das variáveis de ambiente
+    """Configuração inicial do T-800"""
     owner_id = os.getenv("BOT_OWNER_ID", "659611103399116800")
     bot.owner_id = int(owner_id)
     
-    # Sincroniza comandos globais
+    # Carrega usuários monitorados
+    data = await get_data()
+    bot.monitored_users = data.get("monitored_users", {
+        "twitch": {},
+        "youtube": {}
+    })
+    
     await bot.tree.sync()
-    logging.info("Comandos globais sincronizados durante o setup")
+    logging.info("Sistemas de armas carregados - Comandos sincronizados")
 
 @bot.event
 async def on_ready():
-    """Evento quando o bot está pronto"""
+    """Ativação do sistema T-800"""
     if not bot.synced:
         try:
-            # Sincroniza comandos por servidor
             for guild in bot.guilds:
                 await bot.tree.sync(guild=guild)
             bot.synced = True
-            logging.info("Comandos sincronizados por servidor com sucesso!")
+            logging.info("Sistemas de mira sincronizados por servidor")
         except Exception as e:
-            logging.error(f"Erro ao sincronizar comandos: {e}")
+            logging.error(f"Falha na sincronização: {e}")
     
     bot.system_ready = True
-    logging.info(f"T-800 ONLINE | ID: {bot.user.id} | Conectado em {len(bot.guilds)} servidores")
+    logging.info(f"T-800 ONLINE | ID: {bot.user.id} | Servidores: {len(bot.guilds)}")
     
-    # Configurar cargo em todos os servidores
     for guild in bot.guilds:
         await ensure_live_role(guild)
 
-    # Iniciar monitoramento
     if not monitor_streams.is_running():
         monitor_streams.start()
 
 async def ensure_live_role(guild: discord.Guild) -> Optional[discord.Role]:
-    """Garante que o cargo AO VIVO existe no servidor"""
+    """Garante o cargo AO VIVO está configurado"""
     try:
         if role := discord.utils.get(guild.roles, name=bot.live_role):
             return role
         
         if not guild.me.guild_permissions.manage_roles:
-            logging.warning(f"Sem permissões para criar cargo em {guild.name}")
             return None
 
         role = await guild.create_role(
@@ -79,10 +85,9 @@ async def ensure_live_role(guild: discord.Guild) -> Optional[discord.Role]:
             color=discord.Color.red(),
             hoist=True,
             mentionable=True,
-            reason="Monitoramento de streams"
+            reason="Protocolo de monitoramento T-800"
         )
         
-        # Move o cargo para o topo da lista (se possível)
         try:
             await role.edit(position=len(guild.roles)-1)
         except:
@@ -95,88 +100,170 @@ async def ensure_live_role(guild: discord.Guild) -> Optional[discord.Role]:
 
 @tasks.loop(minutes=5)
 async def monitor_streams():
-    """Tarefa periódica para monitorar streams"""
+    """Rotina de monitoramento de alvos"""
     if not bot.system_ready:
         return
     
     logging.info("INICIANDO VARREDURA DE ALVOS...")
-    # Implementação do monitoramento aqui
+    
+    try:
+        # Monitorar Twitch
+        if bot.monitored_users["twitch"]:
+            targets = list(bot.monitored_users["twitch"].keys())
+            live_streams = await bot.twitch_api.check_live_channels(targets)
+            
+            for streamer, is_live in live_streams.items():
+                if is_live:
+                    logging.info(f"ALVO DETECTADO: {streamer} está ao vivo")
+                    # Implementar notificações aqui
+                    
+        # Monitorar YouTube (implementação similar)
+        
+    except Exception as e:
+        logging.error(f"FALHA NO SISTEMA DE VARREDURA: {str(e)}")
 
-# COMANDOS DE APLICAÇÃO (SLASH COMMANDS)
+# COMANDOS DE GERENCIAMENTO DE USUÁRIOS
+
+@bot.tree.command(name="adicionar_twitch", description="Adiciona um streamer da Twitch para monitoramento")
+@app_commands.describe(nome="Nome do streamer na Twitch")
+@app_commands.default_permissions(manage_guild=True)
+async def add_twitch(interaction: discord.Interaction, nome: str):
+    """Adiciona um alvo Twitch ao sistema de monitoramento"""
+    try:
+        nome = nome.lower()
+        if nome in bot.monitored_users["twitch"]:
+            await interaction.response.send_message(
+                f"⚠️ **{nome}** já está na lista de alvos do T-800!",
+                ephemeral=True
+            )
+            return
+
+        bot.monitored_users["twitch"][nome] = {
+            "added_by": interaction.user.id,
+            "added_at": datetime.now().isoformat(),
+            "guild_id": interaction.guild.id
+        }
+        
+        await update_monitored_users("twitch", bot.monitored_users["twitch"])
+        
+        await interaction.response.send_message(
+            f"✅ **{nome}** adicionado ao sistema de monitoramento!\n"
+            f"`O T-800 agora rastreará quando {nome} estiver online.`",
+            ephemeral=True
+        )
+    except Exception as e:
+        await interaction.response.send_message(
+            f"❌ Falha no protocolo de adição: {e}",
+            ephemeral=True
+        )
+
+@bot.tree.command(name="remover_twitch", description="Remove um streamer da Twitch do monitoramento")
+@app_commands.describe(nome="Nome do streamer na Twitch")
+@app_commands.default_permissions(manage_guild=True)
+async def remove_twitch(interaction: discord.Interaction, nome: str):
+    """Remove um alvo Twitch do sistema"""
+    try:
+        nome = nome.lower()
+        if nome not in bot.monitored_users["twitch"]:
+            await interaction.response.send_message(
+                f"❌ **{nome}** não encontrado na lista de alvos!",
+                ephemeral=True
+            )
+            return
+
+        del bot.monitored_users["twitch"][nome]
+        await update_monitored_users("twitch", bot.monitored_users["twitch"])
+        
+        await interaction.response.send_message(
+            f"✅ **{nome}** removido do sistema de monitoramento!\n"
+            f"`Alvo removido com sucesso.`",
+            ephemeral=True
+        )
+    except Exception as e:
+        await interaction.response.send_message(
+            f"❌ Falha no protocolo de remoção: {e}",
+            ephemeral=True
+        )
+
+@bot.tree.command(name="listar_twitch", description="Lista todos streamers da Twitch monitorados")
+async def list_twitch(interaction: discord.Interaction):
+    """Mostra a lista de alvos Twitch"""
+    try:
+        if not bot.monitored_users["twitch"]:
+            await interaction.response.send_message(
+                "ℹ️ Nenhum alvo Twitch está sendo monitorado atualmente.",
+                ephemeral=True
+            )
+            return
+
+        embed = discord.Embed(
+            title="📡 Alvos Twitch Monitorados",
+            description="Lista de streamers sendo rastreados",
+            color=0x9147ff
+        )
+        
+        for i, (streamer, data) in enumerate(bot.monitored_users["twitch"].items(), 1):
+            added_by = await bot.fetch_user(data["added_by"]) if data.get("added_by") else "Desconhecido"
+            embed.add_field(
+                name=f"{i}. {streamer}",
+                value=f"Adicionado por: {added_by}\n"
+                     f"Data: {data.get('added_at', 'N/A')}",
+                inline=False
+            )
+            
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(
+            f"❌ Falha ao acessar a lista de alvos: {e}",
+            ephemeral=True
+        )
+
+# COMANDOS PARA YOUTUBE (estrutura similar)
+
+# ... (implementar comandos similares para YouTube)
+
+# COMANDOS DE STATUS E GERENCIAMENTO
 
 @bot.tree.command(name="status", description="Relatório do sistema T-800")
 async def system_status(interaction: discord.Interaction):
-    """Mostra o status do bot"""
+    """Mostra o status do sistema"""
     uptime = datetime.now() - bot.start_time
-    await interaction.response.send_message(
-        f"**STATUS DO T-800**\n"
-        f"⏱ Operando por: {str(uptime).split('.')[0]}\n"
-        f"🔍 Monitorando: {len(bot.guilds)} servidores\n"
-        f"👥 Total de usuários: {sum(g.member_count for g in bot.guilds)}\n"
-        f"✅ Sistemas operacionais\n"
-        f"💻 Objetivo primário: Proteger os streamers humanos",
-        ephemeral=True
+    total_users = sum(g.member_count for g in bot.guilds)
+    
+    embed = discord.Embed(
+        title="⚙️ STATUS DO SISTEMA T-800",
+        color=0x00ff00
     )
+    embed.add_field(name="⏱ Tempo de atividade", value=str(uptime).split('.')[0], inline=False)
+    embed.add_field(name="🔍 Servidores", value=str(len(bot.guilds)), inline=True)
+    embed.add_field(name="👥 Usuários", value=str(total_users), inline=True)
+    embed.add_field(name="📡 Alvos Twitch", value=str(len(bot.monitored_users["twitch"])), inline=True)
+    embed.add_field(name="▶️ Alvos YouTube", value=str(len(bot.monitored_users["youtube"])), inline=True)
+    embed.set_footer(text="Sistema operacional - Missão em andamento")
+    
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.tree.command(name="sobre", description="Informações sobre o T-800")
-async def about(interaction: discord.Interaction):
-    """Mostra informações sobre o bot"""
-    await interaction.response.send_message(
-        "**SISTEMA T-800 v2.0**\n"
-        "Modelo 101 - Cyberdyne Systems\n"
-        "Ano de fabricação: 2025\n"
-        "CPU: Processador neuronal de aprendizado\n"
-        "Missão: Monitorar e proteger streamers humanos\n"
-        "Frase característica: 'I'll be back'",
-        ephemeral=True
-    )
-
-@bot.tree.command(name="terminar", description="Comando de emergência (apenas para administradores)")
+@bot.tree.command(name="terminar", description="Desativa o sistema T-800 (apenas admin)")
 @app_commands.default_permissions(administrator=True)
 async def shutdown(interaction: discord.Interaction):
-    """Desliga o bot (apenas para admins)"""
+    """Protocolo de desativação"""
     await interaction.response.send_message(
-        "⚠️ ATIVAÇÃO DO PROTOCOLO DE AUTODESTRUIÇÃO\n"
+        "⚠️ **ATIVAÇÃO DO PROTOCOLO DE AUTODESTRUIÇÃO**\n"
         "Sistema será desativado em 5 segundos...",
         ephemeral=True
     )
     await asyncio.sleep(5)
-    await interaction.followup.send("T-800 desativado. Até a próxima, humano.")
+    await interaction.followup.send("✅ T-800 desativado com sucesso. Até a próxima, humano.")
     await bot.close()
-
-# COMANDOS DE TEXTO (PREFIXO !)
 
 @bot.command()
 @commands.is_owner()
 async def sync(ctx: commands.Context):
-    """Sincroniza comandos (apenas para dono do bot)"""
+    """Sincroniza comandos (apenas dono)"""
     try:
-        # Sincroniza globalmente
         await bot.tree.sync()
-        
-        # Sincroniza por servidor
         if ctx.guild:
             await bot.tree.sync(guild=ctx.guild)
-        
-        await ctx.send("✅ Comandos sincronizados com sucesso!")
+        await ctx.send("✅ Sistemas de mira sincronizados com sucesso!")
     except Exception as e:
-        await ctx.send(f"❌ Erro ao sincronizar: {e}")
-
-@bot.command()
-@commands.is_owner()
-async def servers(ctx: commands.Context):
-    """Lista todos os servidores (apenas para dono)"""
-    embed = discord.Embed(
-        title="Servidores Conectados",
-        description=f"Total: {len(bot.guilds)}",
-        color=discord.Color.blue()
-    )
-    
-    for guild in bot.guilds:
-        embed.add_field(
-            name=guild.name,
-            value=f"ID: {guild.id}\nMembros: {guild.member_count}",
-            inline=False
-        )
-    
-    await ctx.send(embed=embed)
+        await ctx.send(f"❌ Falha na sincronização: {e}")
