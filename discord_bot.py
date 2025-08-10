@@ -7,8 +7,6 @@ from typing import Optional, Dict, List
 import os
 import asyncio
 from data_manager import get_data, save_data
-from twitch_api import TwitchAPI
-from youtube_api import YouTubeAPI
 
 # ========== CONFIGURAÇÃO INICIAL ========== #
 # Configuração do logger
@@ -34,8 +32,8 @@ class T800Bot(commands.Bot):
         self.live_role = "AO VIVO"
         self.system_ready = False
         self.synced = False
-        self.twitch_api: Optional[TwitchAPI] = None
-        self.youtube_api: Optional[YouTubeAPI] = None
+        self.twitch_api = None
+        self.youtube_api = None
 
 # Inicialização do Bot
 bot = T800Bot()
@@ -141,7 +139,6 @@ async def monitor_streams():
                 live_role = discord.utils.get(guild.roles, name=bot.live_role)
                 if not live_role: continue
                 
-                # A API do YouTube espera o channel_id. Assumimos que o nome armazenado é o ID.
                 is_live = await bot.youtube_api.check_live_status(channel_name)
                 
                 if is_live:
@@ -225,42 +222,33 @@ async def listar_streamers(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     data = await get_data()
     
-    embed = discord.Embed(
-        title="👥 Lista de Alvos Monitorados",
-        description="Dados recuperados com sucesso.",
-        color=discord.Color.blue()
-    )
+    output = "🤖 **RELATÓRIO DE ALVOS**\n\n"
     
-    twitch_list = []
+    twitch_output = []
     for streamer, info in data["monitored_users"]["twitch"].items():
         member = interaction.guild.get_member(info.get("added_by"))
-        twitch_list.append(
-            f"**Canal:** `{streamer}`\n"
-            f"**Vinculado a:** `{member.name if member else 'Desconhecido'}`\n"
+        twitch_output.append(
+            f"**Plataforma:** Twitch\n"
+            f"**Nome do canal:** {streamer}\n"
+            f"**Usuário:** {member.mention if member else 'Desconhecido'}\n"
         )
-    
-    youtube_list = []
+
+    youtube_output = []
     for channel, info in data["monitored_users"]["youtube"].items():
         member = interaction.guild.get_member(info.get("added_by"))
-        youtube_list.append(
-            f"**Canal:** `{channel}`\n"
-            f"**Vinculado a:** `{member.name if member else 'Desconhecido'}`\n"
+        youtube_output.append(
+            f"**Plataforma:** YouTube\n"
+            f"**Nome do canal:** {channel}\n"
+            f"**Usuário:** {member.mention if member else 'Desconhecido'}\n"
         )
-        
-    embed.add_field(
-        name="Plataforma: Twitch",
-        value="\n".join(twitch_list) if twitch_list else "Nenhum alvo monitorado.",
-        inline=False
-    )
-    
-    embed.add_field(
-        name="Plataforma: YouTube",
-        value="\n".join(youtube_list) if youtube_list else "Nenhum alvo monitorado.",
-        inline=False
-    )
-    
-    await interaction.edit_original_response(embed=embed)
 
+    if twitch_output or youtube_output:
+        output += "--- Twitch ---\n" + "\n".join(twitch_output) + "\n"
+        output += "--- YouTube ---\n" + "\n".join(youtube_output)
+    else:
+        output += "Nenhum alvo encontrado no sistema."
+
+    await interaction.edit_original_response(content=output)
 
 # ========== INICIALIZAÇÃO ========== #
 async def setup():
