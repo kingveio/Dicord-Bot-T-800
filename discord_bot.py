@@ -7,6 +7,8 @@ from typing import Optional, Dict, List
 import os
 import asyncio
 from data_manager import get_data, save_data
+from twitch_api import TwitchAPI
+from youtube_api import YouTubeAPI
 
 # ========== CONFIGURAÇÃO INICIAL ========== #
 # Configuração do logger
@@ -32,6 +34,8 @@ class T800Bot(commands.Bot):
         self.live_role = "AO VIVO"
         self.system_ready = False
         self.synced = False
+        self.twitch_api: Optional[TwitchAPI] = None
+        self.youtube_api: Optional[YouTubeAPI] = None
 
 # Inicialização do Bot
 bot = T800Bot()
@@ -101,19 +105,61 @@ async def monitor_streams():
         if not data:
             logger.error("⚠️ Dados não carregados corretamente!")
             return
-
+            
         # Monitorar Twitch
         if data["monitored_users"]["twitch"]:
             streamers = list(data["monitored_users"]["twitch"].keys())
             live_status = await bot.twitch_api.check_live_channels(streamers)
             
-            for streamer, is_live in live_status.items():
-                if is_live:
-                    logger.info(f"🎥 {streamer} está AO VIVO!")
-                    # Lógica de notificação aqui
+            for streamer_name, is_live in live_status.items():
+                user_info = data["monitored_users"]["twitch"].get(streamer_name.lower())
+                if not user_info: continue
 
-        # Monitorar YouTube (similar)
-        # ...
+                guild = bot.get_guild(user_info.get("guild_id"))
+                member = guild.get_member(user_info.get("added_by")) if guild else None
+                if not member: continue
+
+                live_role = discord.utils.get(guild.roles, name=bot.live_role)
+                if not live_role: continue
+
+                if is_live:
+                    if live_role not in member.roles:
+                        await member.add_roles(live_role, reason="Streamer está ao vivo")
+                        logger.info(f"✅ Cargo 'AO VIVO' adicionado para {member.name} (Twitch)")
+                else:
+                    if live_role in member.roles:
+                        await member.remove_roles(live_role, reason="Streamer não está mais ao vivo")
+                        logger.info(f"✅ Cargo 'AO VIVO' removido de {member.name} (Twitch)")
+        
+        # Monitorar YouTube
+        if data["monitored_users"]["youtube"]:
+            youtube_channels = list(data["monitored_users"]["youtube"].keys())
+            
+            for channel_name in youtube_channels:
+                user_info = data["monitored_users"]["youtube"].get(channel_name.lower())
+                if not user_info: continue
+
+                guild = bot.get_guild(user_info.get("guild_id"))
+                member = guild.get_member(user_info.get("added_by")) if guild else None
+                if not member: continue
+                
+                live_role = discord.utils.get(guild.roles, name=bot.live_role)
+                if not live_role: continue
+                
+                # A API do YouTube precisa do channel_id para verificar o status
+                # Aqui você precisaria ter o ID do canal armazenado, não apenas o nome.
+                # A lógica abaixo assume que o 'nome' salvo é, na verdade, o ID.
+                # Se for o nome, você precisaria fazer uma busca adicional para obter o ID.
+                is_live = await bot.youtube_api.check_live_status(channel_name)
+                
+                if is_live:
+                    if live_role not in member.roles:
+                        await member.add_roles(live_role, reason="Streamer está ao vivo no YouTube")
+                        logger.info(f"✅ Cargo 'AO VIVO' adicionado para {member.name} (YouTube)")
+                else:
+                    if live_role in member.roles:
+                        await member.remove_roles(live_role, reason="Streamer não está mais ao vivo")
+                        logger.info(f"✅ Cargo 'AO VIVO' removido de {member.name} (YouTube)")
 
     except Exception as e:
         logger.error(f"❌ Falha no monitoramento: {e}")
@@ -132,14 +178,10 @@ async def sync(ctx: commands.Context):
 # ========== COMANDOS DE APLICAÇÃO (SLASH) ========== #
 @bot.tree.command(name="status", description="Mostra o status do T-800")
 async def status(interaction: discord.Interaction):
-    # Defer a resposta para o Discord, indicando que a tarefa levará tempo.
+    """Mostra informações do sistema."""
     await interaction.response.defer(ephemeral=True)
-
-    # Agora, você pode fazer as operações que podem demorar.
     uptime = datetime.now() - bot.start_time
     data = await get_data()
-
-    # Depois de obter os dados, edite a mensagem original.
     await interaction.edit_original_response(
         content=(
             f"**🤖 STATUS DO T-800**\n"
@@ -158,17 +200,17 @@ async def status(interaction: discord.Interaction):
 async def adicionar_streamer(interaction: discord.Interaction, plataforma: str, nome: str):
     """Adiciona um streamer à lista de monitoramento."""
     try:
+        await interaction.response.defer(ephemeral=True)
         data = await get_data()
         plataforma = plataforma.lower()
         
         if plataforma not in ["twitch", "youtube"]:
-            return await interaction.response.send_message("❌ Plataforma inválida!", ephemeral=True)
+            return await interaction.edit_original_response(content="❌ Plataforma inválida!")
 
         # Verifica se já está sendo monitorado
         if nome.lower() in data["monitored_users"][plataforma]:
-            return await interaction.response.send_message(
-                f"⚠️ {nome} já está sendo monitorado!",
-                ephemeral=True
+            return await interaction.edit_original_response(
+                content=f"⚠️ {nome} já está sendo monitorado!"
             )
 
         # Adiciona ao sistema
@@ -177,16 +219,14 @@ async def adicionar_streamer(interaction: discord.Interaction, plataforma: str, 
             "added_at": datetime.now().isoformat(),
             "guild_id": interaction.guild.id
         }
-        await update_monitored_users(plataforma, data["monitored_users"][plataforma])
+        await save_data(bot.drive_service)
 
-        await interaction.response.send_message(
-            f"✅ **{nome}** adicionado ao monitoramento na {plataforma.capitalize()}!",
-            ephemeral=True
+        await interaction.edit_original_response(
+            content=f"✅ **{nome}** adicionado ao monitoramento na {plataforma.capitalize()}!"
         )
     except Exception as e:
-        await interaction.response.send_message(
-            f"❌ Erro ao adicionar streamer: {e}",
-            ephemeral=True
+        await interaction.edit_original_response(
+            content=f"❌ Erro ao adicionar streamer: {e}"
         )
 
 # (Adicione outros comandos como listar, remover, etc.)
