@@ -10,7 +10,7 @@ from googleapiclient.errors import HttpError
 logger = logging.getLogger("T-800")
 
 # Nome do arquivo de dados no Google Drive
-DATA_FILE_NAME = "streamer_data.json"
+DATA_FILE_NAME = "streamers.json"
 
 # Estrutura padrão de dados
 DEFAULT_DATA_STRUCTURE = {
