@@ -124,7 +124,7 @@ async def about(interaction: discord.Interaction):
     await interaction.response.send_message(
         "**SISTEMA T-800 v2.0**\n"
         "Modelo 101 - Cyberdyne Systems\n"
-        "Ano de fabricação: 2024\n"
+        "Ano de fabricação: 2025\n"
         "CPU: Processador neuronal de aprendizado\n"
         "Missão: Monitorar e proteger streamers humanos\n"
         "Frase característica: 'I'll be back'",
