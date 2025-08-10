@@ -1,63 +1,87 @@
+import os
 import aiohttp
+import asyncio
 import logging
 from typing import List, Dict, Optional
 
-logger = logging.getLogger("T-800-TW")
+logger = logging.getLogger("T-800")
 
 class TwitchAPI:
-    def __init__(self, session: aiohttp.ClientSession, client_id: str, client_secret: str):
-        self.session = session
+    def __init__(self, client_id: str, client_secret: str):
         self.client_id = client_id
         self.client_secret = client_secret
-        self.token = None
-        self.token_expires = 0
+        self.access_token = None
+        self.headers = None
 
-    async def _get_auth_token(self):
+    async def _get_access_token(self):
+        """Obtém um novo token de acesso da API da Twitch."""
+        url = "https://id.twitch.tv/oauth2/token"
+        params = {
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+            "grant_type": "client_credentials"
+        }
+        
         try:
-            url = "https://id.twitch.tv/oauth2/token"
-            params = {
-                "client_id": self.client_id,
-                "client_secret": self.client_secret,
-                "grant_type": "client_credentials"
-            }
-            
-            async with self.session.post(url, params=params) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    self.token = data['access_token']
-                    self.token_expires = data.get('expires_in', 3600)
-                    logger.info("Token de autenticação Twitch obtido")
-                else:
-                    logger.error(f"Falha ao obter token: {resp.status}")
-                    raise Exception("Falha na autenticação Twitch")
-        except Exception as e:
-            logger.error(f"ERRO DE AUTENTICAÇÃO: {str(e)}")
-            raise
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, data=params) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        self.access_token = data.get("access_token")
+                        self.headers = {
+                            "Client-ID": self.client_id,
+                            "Authorization": f"Bearer {self.access_token}"
+                        }
+                        logger.info("✅ Token da Twitch obtido/renovado com sucesso.")
+                        return True
+                    else:
+                        logger.error(f"❌ Erro ao obter token da Twitch: {response.status} - {await response.text()}")
+                        return False
+        except aiohttp.ClientError as e:
+            logger.error(f"❌ Erro de conexão ao tentar obter token da Twitch: {e}")
+            return False
 
-    async def check_live_channels(self, channels: List[str]) -> Dict[str, bool]:
+    async def check_live_channels(self, streamer_names: List[str]) -> Dict[str, bool]:
+        """Verifica o status de live de uma lista de streamers."""
+        if not self.access_token:
+            await self._get_access_token()
+            if not self.access_token:
+                logger.error("❌ Falha crítica: Não foi possível obter o token de acesso da Twitch.")
+                return {}
+
+        url = "https://api.twitch.tv/helix/streams"
+        params = {"user_login": streamer_names}
+        live_status = {}
+
         try:
-            if not self.token:
-                await self._get_auth_token()
+            async with aiohttp.ClientSession(headers=self.headers) as session:
+                async with session.get(url, params=params) as response:
+                    if response.status == 401:
+                        # Token expirado, tenta renovar e refazer a requisição
+                        logger.warning("⚠️ Token da Twitch expirado. Tentando renovar...")
+                        if await self._get_access_token():
+                            async with aiohttp.ClientSession(headers=self.headers) as new_session:
+                                async with new_session.get(url, params=params) as new_response:
+                                    if new_response.status == 200:
+                                        data = await new_response.json()
+                                        streams = data.get("data", [])
+                                        live_streamer_logins = {stream['user_login'].lower() for stream in streams}
+                                        for name in streamer_names:
+                                            live_status[name.lower()] = name.lower() in live_streamer_logins
+                                    else:
+                                        logger.error(f"❌ Erro na API Twitch após renovar token: {new_response.status}")
+                                else:
+                                    logger.error("❌ Falha ao renovar o token da Twitch.")
+                    elif response.status == 200:
+                        data = await response.json()
+                        streams = data.get("data", [])
+                        live_streamer_logins = {stream['user_login'].lower() for stream in streams}
+                        for name in streamer_names:
+                            live_status[name.lower()] = name.lower() in live_streamer_logins
+                    else:
+                        logger.error(f"❌ Erro na API Twitch: {response.status} - {await response.text()}")
 
-            headers = {
-                "Client-ID": self.client_id,
-                "Authorization": f"Bearer {self.token}"
-            }
-            
-            async with self.session.get(
-                f"https://api.twitch.tv/helix/streams?user_login={','.join(channels)}",
-                headers=headers,
-                timeout=10
-            ) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    return {stream['user_login'].lower(): True for stream in data.get('data', [])}
-                elif resp.status == 401:
-                    await self._get_auth_token()
-                    return await self.check_live_channels(channels)
-                else:
-                    logger.error(f"Erro na API Twitch: {resp.status}")
-                    return {}
-        except Exception as e:
-            logger.error(f"FALHA NO MONITORAMENTO: {str(e)}")
-            return {}
+        except aiohttp.ClientError as e:
+            logger.error(f"❌ Erro de conexão com a API da Twitch: {e}")
+        
+        return live_status
