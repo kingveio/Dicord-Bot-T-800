@@ -65,16 +65,35 @@ async def main_async():
             )
             bot.drive_service = GoogleDriveService()
 
+            # Verificação mais robusta do arquivo de dados
             if not os.path.exists("streamers.json"):
-                with open("streamers.json", 'w') as f:
-                    json.dump({  # Agora usando o módulo json importado
-                        "streamers": {},
-                        "youtube_channels": {},
-                        "monitored_users": {
-                            "twitch": {},
-                            "youtube": {}
-                        }
-                    }, f)
+                try:
+                    with open("streamers.json", 'w') as f:
+                        json.dump({
+                            "streamers": {},
+                            "youtube_channels": {},
+                            "monitored_users": {
+                                "twitch": {},
+                                "youtube": {}
+                            }
+                        }, f, indent=2)
+                    logger.info("Arquivo de dados local criado com estrutura inicial")
+                except Exception as e:
+                    logger.error(f"Erro ao criar arquivo de dados: {e}")
+                    raise
+
+            try:
+                await load_data_from_drive_if_exists(bot.drive_service)
+            except Exception as e:
+                logger.error(f"Falha ao carregar dados, usando estrutura vazia: {e}")
+                DATA_CACHE.update({
+                    "streamers": {},
+                    "youtube_channels": {},
+                    "monitored_users": {
+                        "twitch": {},
+                        "youtube": {}
+                    }
+                })
                 logger.info("Arquivo de dados local criado")
 
             await load_data_from_drive_if_exists(bot.drive_service)
