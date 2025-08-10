@@ -2,7 +2,7 @@ import os
 import re
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 
 import discord
@@ -23,10 +23,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Configuração das Intents, com a função de voz desabilitada
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
-intents.voice_states = False
+intents.voice_states = False  # **CORREÇÃO:** Desabilita a voz para remover o aviso PyNaCl
 
 class StreamBot(commands.Bot):
     def __init__(self):
@@ -145,11 +146,22 @@ async def monitor_streams():
                 if not live_role: continue
 
                 for youtube_id, config in channels_map.items():
-                    discord_id = config.get("discord_user_id")
-                    if not discord_id: continue
+                    # **CORREÇÃO:** Tratamento de erros para discord_id inválido
+                    discord_id_str = config.get("discord_user_id")
+                    if not discord_id_str: 
+                        logger.warning(f"❌ Valor de discord_user_id inválido ou ausente para o canal {youtube_id}.")
+                        continue
 
-                    member = guild.get_member(int(discord_id))
-                    if not member: continue
+                    try:
+                        discord_id = int(discord_id_str)
+                    except (ValueError, TypeError):
+                        logger.error(f"❌ Valor inválido para discord_user_id: '{discord_id_str}' no canal {youtube_id}")
+                        continue
+                    
+                    member = guild.get_member(discord_id)
+                    if not member:
+                        logger.warning(f"❌ Membro com ID {discord_id} vinculado ao canal do YouTube não encontrado.")
+                        continue
                     
                     is_live = await bot.youtube_api.is_channel_live(youtube_id)
                     has_role = live_role in member.roles
@@ -164,7 +176,6 @@ async def monitor_streams():
     except Exception as e:
         logger.error(f"❌ Falha no monitoramento: {e}. Alerta: Falha na operação.")
 
-
 # ========== COMANDOS DE APLICAÇÃO (SLASH) ========== #
 
 @bot.tree.command(name="adicionar_twitch", description="Adiciona um streamer da Twitch para monitoramento")
@@ -178,6 +189,7 @@ async def adicionar_twitch(
     nome_twitch: str,
     usuario_discord: discord.Member
 ):
+    # **CORREÇÃO:** Defer da resposta para evitar timeout
     await interaction.response.defer(ephemeral=True)
     try:
         data = await get_cached_data(bot.drive_service)
@@ -212,6 +224,7 @@ async def adicionar_youtube(
     url_canal: str,
     usuario_discord: Optional[discord.Member] = None
 ):
+    # **CORREÇÃO:** Defer da resposta para evitar timeout
     await interaction.response.defer(ephemeral=True)
     try:
         youtube_id = await bot.youtube_api.get_channel_id_from_url(url_canal)
@@ -245,6 +258,7 @@ async def adicionar_youtube(
 @app_commands.describe(nome_twitch="Nome do streamer da Twitch")
 @app_commands.checks.has_permissions(administrator=True)
 async def remover_twitch(interaction: discord.Interaction, nome_twitch: str):
+    # **CORREÇÃO:** Defer da resposta para evitar timeout
     await interaction.response.defer(ephemeral=True)
     try:
         data = await get_cached_data(bot.drive_service)
@@ -278,6 +292,7 @@ async def remover_twitch(interaction: discord.Interaction, nome_twitch: str):
 @app_commands.describe(url_canal="URL ou ID do Canal do YouTube")
 @app_commands.checks.has_permissions(administrator=True)
 async def remover_youtube(interaction: discord.Interaction, url_canal: str):
+    # **CORREÇÃO:** Defer da resposta para evitar timeout
     await interaction.response.defer(ephemeral=True)
     try:
         youtube_id = await bot.youtube_api.get_channel_id_from_url(url_canal)
@@ -306,6 +321,7 @@ async def remover_youtube(interaction: discord.Interaction, url_canal: str):
 
 @bot.tree.command(name="listar_alvos", description="Mostra a lista de alvos monitorados")
 async def listar_alvos(interaction: discord.Interaction):
+    # **CORREÇÃO:** Defer da resposta para evitar timeout
     await interaction.response.defer(ephemeral=True)
     data = await get_cached_data(bot.drive_service)
     
@@ -339,11 +355,12 @@ async def listar_alvos(interaction: discord.Interaction):
         output += "Nenhum alvo encontrado no sistema."
 
     await interaction.followup.send(content=output, ephemeral=True)
-    
+
+
 @bot.tree.command(name="status", description="Mostra o status do T-800")
 async def status(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True) # Mova esta linha para o topo
-    
+    # **CORREÇÃO:** Defer da resposta para evitar timeout
+    await interaction.response.defer(ephemeral=True)
     uptime = datetime.now() - bot.start_time
     data = await get_cached_data(bot.drive_service)
     
