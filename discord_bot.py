@@ -339,11 +339,11 @@ async def listar_alvos(interaction: discord.Interaction):
         output += "Nenhum alvo encontrado no sistema."
 
     await interaction.followup.send(content=output, ephemeral=True)
-
-
+    
 @bot.tree.command(name="status", description="Mostra o status do T-800")
 async def status(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=True) # Mova esta linha para o topo
+    
     uptime = datetime.now() - bot.start_time
     data = await get_cached_data(bot.drive_service)
     
