@@ -167,10 +167,14 @@ async def sync(ctx: commands.Context):
 # ========== COMANDOS DE APLICAÇÃO (SLASH) ========== #
 @bot.tree.command(name="status", description="Mostra o status do T-800")
 async def status(interaction: discord.Interaction):
-    """Mostra informações do sistema."""
+    # A primeira ação deve ser sempre adiar a resposta
     await interaction.response.defer(ephemeral=True)
+    
+    # Agora, execute a lógica que pode demorar
     uptime = datetime.now() - bot.start_time
     data = await get_data()
+    
+    # Edite a resposta original com os dados coletados
     await interaction.edit_original_response(
         content=(
             f"**🤖 STATUS DO T-800**\n"
