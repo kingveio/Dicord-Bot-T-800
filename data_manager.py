@@ -1,5 +1,3 @@
-# data_manager.py
-
 import os
 import json
 import asyncio
@@ -17,7 +15,6 @@ DATA_FILE_NAME = "streamers.json"
 # Estrutura padrão de dados
 DEFAULT_DATA_STRUCTURE = {
     "streamers": {},
-    "youtube_channels": {}
 }
 
 # Cache de dados para evitar múltiplas requisições
@@ -68,6 +65,9 @@ async def set_cached_data(data: Dict[str, Any], drive_service) -> bool:
         _DATA_CACHE = data
         _LAST_FETCHED = datetime.now()
         _LAST_WRITE = datetime.now()
-        logger.info("✅ Dados salvos com sucesso no Google Drive.")
     
     return success
+
+def get_last_fetched_time() -> datetime:
+    """Retorna o timestamp da última vez que os dados foram buscados."""
+    return _LAST_FETCHED
