@@ -343,14 +343,16 @@ async def status(interaction: discord.Interaction):
     
     twitch_count = 0
     kick_count = 0
+    
     if isinstance(data.get("streamers"), dict):
         for guild_streamers in data["streamers"].values():
             if isinstance(guild_streamers, dict):
                 for user_config in guild_streamers.values():
-                    if 'twitch_username' in user_config:
-                        twitch_count += 1
-                    if 'kick_username' in user_config:
-                        kick_count += 1
+                    if isinstance(user_config, dict):
+                        if 'twitch_username' in user_config:
+                            twitch_count += 1
+                        if 'kick_username' in user_config:
+                            kick_count += 1
     
     await interaction.followup.send(
         content=(
