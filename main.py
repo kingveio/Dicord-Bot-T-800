@@ -29,7 +29,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("T-800")
 
-# Verificação de requisitos
 REQUIRED_ENV = [
     "DISCORD_TOKEN", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET",
     "DRIVE_FOLDER_ID", "DRIVE_PRIVATE_KEY_ID", "DRIVE_PRIVATE_KEY",
@@ -40,7 +39,6 @@ if missing := [var for var in REQUIRED_ENV if var not in os.environ]:
     logger.critical(f"FALHA DE INICIALIZAÇÃO: Variáveis ausentes - {missing}")
     sys.exit(1)
 
-# Servidor de monitoramento
 app = Flask(__name__)
 START_TIME = datetime.now()
 
@@ -54,7 +52,6 @@ def system_status():
 
 async def main_async():
     try:
-        # Inicializar subsistemas
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
             bot.twitch_api = TwitchAPI(
                 session,
@@ -67,15 +64,20 @@ async def main_async():
             )
             bot.drive_service = GoogleDriveService()
 
-            # Verificar arquivo de dados
             if not os.path.exists("streamers.json"):
                 with open("streamers.json", 'w') as f:
-                    f.write('{"streamers": {}, "youtube_channels": {}}')
+                    json.dump({
+                        "streamers": {},
+                        "youtube_channels": {},
+                        "monitored_users": {
+                            "twitch": {},
+                            "youtube": {}
+                        }
+                    }, f)
                 logger.info("Arquivo de dados local criado")
 
             await load_data_from_drive_if_exists(bot.drive_service)
 
-            # Iniciar servidor
             threading.Thread(
                 target=lambda: app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080))),
                 daemon=True
