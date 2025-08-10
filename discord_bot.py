@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, List
 import os
 import asyncio
-from data_manager import get_data, save_data, update_monitored_users
+from data_manager import get_data, save_data
 
 # ========== CONFIGURAÇÃO INICIAL ========== #
 # Configuração do logger
