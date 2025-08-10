@@ -1,3 +1,5 @@
+# data_manager.py
+
 import os
 import json
 import asyncio
@@ -27,11 +29,9 @@ async def get_cached_data(drive_service) -> Dict[str, Any]:
     """Retorna os dados do cache ou faz o download se estiver desatualizado."""
     global _DATA_CACHE, _LAST_FETCHED
     
-    # Se o cache tiver menos de 1 minuto, usa-o
     if (datetime.now() - _LAST_FETCHED) < timedelta(minutes=1):
         return _DATA_CACHE.copy() if _DATA_CACHE else DEFAULT_DATA_STRUCTURE.copy()
     
-    # Se não, busca os dados
     if not drive_service.service:
         logger.error("❌ Serviço do Google Drive não inicializado.")
         return DEFAULT_DATA_STRUCTURE.copy()
@@ -59,14 +59,15 @@ async def set_cached_data(data: Dict[str, Any], drive_service) -> bool:
         logger.error("❌ Serviço do Google Drive não disponível.")
         return False
         
-    # Limita a gravação para não sobrecarregar o Drive API
     if (datetime.now() - _LAST_WRITE) < timedelta(seconds=10):
         logger.warning("⚠️ Tentativa de gravação muito rápida. Operação adiada.")
-        await asyncio.sleep(10) # Espera 10 segundos antes de tentar de novo
+        await asyncio.sleep(10)
 
     success = await drive_service.upload_file_from_memory(json.dumps(data, indent=4), DATA_FILE_NAME)
     if success:
         _DATA_CACHE = data
         _LAST_FETCHED = datetime.now()
         _LAST_WRITE = datetime.now()
+        logger.info("✅ Dados salvos com sucesso no Google Drive.")
+    
     return success
