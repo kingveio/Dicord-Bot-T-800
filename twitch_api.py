@@ -7,18 +7,12 @@ from typing import List, Dict, Optional
 logger = logging.getLogger("T-800")
 
 class TwitchAPI:
-    def __init__(self, client_id: str, client_secret: str):
+    def __init__(self, session: aiohttp.ClientSession, client_id: str, client_secret: str):
+        self.session = session
         self.client_id = client_id
         self.client_secret = client_secret
         self.access_token = None
         self.headers = None
-        self.session = aiohttp.ClientSession()
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.session.close()
 
     async def _get_access_token(self):
         """Obtém um novo token de acesso da API da Twitch."""
