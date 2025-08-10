@@ -1,5 +1,3 @@
-# discord_bot.py
-
 import os
 import re
 import asyncio
@@ -13,7 +11,6 @@ from discord import app_commands, ui
 
 from data_manager import get_cached_data, set_cached_data
 from twitch_api import TwitchAPI
-from youtube_api import YouTubeAPI
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,337 +41,179 @@ class StreamBot(commands.Bot):
         self.start_time = datetime.now()
         self.live_role = "AO VIVO"
         self.twitch_api: Optional[TwitchAPI] = None
-        self.youtube_api: Optional[YouTubeAPI] = None
         self.drive_service = None
         self.guild_live_roles: Dict[int, Optional[discord.Role]] = {}
 
 bot = StreamBot()
 
-# ========== EVENTOS ========== #
 @bot.event
 async def on_ready():
-    """Evento quando o bot está pronto para uso."""
-    logger.info(f"🤖 T-800 ONLINE | ID: {bot.user.id} | Servidores: {len(bot.guilds)}")
+    await bot.wait_until_ready()
     try:
         synced = await bot.tree.sync()
         logger.info(f"✅ {len(synced)} comandos sincronizados.")
     except Exception as e:
         logger.error(f"❌ Falha ao sincronizar comandos: {e}")
     
-    for guild in bot.guilds:
-        await ensure_live_role(guild)
+    bot.start_time = datetime.now()
+    logger.info(f"🤖 T-800 ONLINE | ID: {bot.user.id} | Servidores: {len(bot.guilds)}")
+    
+    if not bot.twitch_api or not bot.drive_service:
+        logger.error("❌ APIs não inicializadas. O bot não irá funcionar corretamente.")
+        return
 
-    if not monitor_streams.is_running():
-        monitor_streams.start()
+    monitor_streams.start()
+    logger.info("🔍 Análise de alvos iniciada...")
+    
+@bot.event
+async def on_disconnect():
+    logger.warning("Bot desconectado do Discord.")
+    
+@bot.event
+async def on_resumed():
+    logger.info("Bot reconectado ao Discord.")
 
-# ========== FUNÇÕES AUXILIARES ========== #
-async def ensure_live_role(guild: discord.Guild) -> Optional[discord.Role]:
-    """Garante que o cargo 'AO VIVO' existe no servidor."""
-    if guild.id in bot.guild_live_roles:
-        role = bot.guild_live_roles[guild.id]
-        if role:
-            return role
-    try:
-        if role := discord.utils.get(guild.roles, name=bot.live_role):
-            bot.guild_live_roles[guild.id] = role
-            return role
-        if guild.me.guild_permissions.manage_roles:
-            role = await guild.create_role(
-                name=bot.live_role,
-                color=discord.Color.red(),
-                hoist=True,
-                mentionable=True,
-                reason="Monitoramento de streams T-800"
-            )
-            logger.info(f"✅ Cargo '{bot.live_role}' criado em {guild.name}. Objetivo concluído.")
-            bot.guild_live_roles[guild.id] = role
-            return role
-        else:
-            logger.warning(f"⚠️ Sem permissão para criar cargo em {guild.name}. Alerta: Falha na operação.")
-            bot.guild_live_roles[guild.id] = None
-            return None
-    except Exception as e:
-        logger.error(f"❌ Erro em {guild.name}: {e}. Alerta: Falha na operação.")
-        bot.guild_live_roles[guild.id] = None
-        return None
-
-# ========== TAREFA PERIÓDICA ========== #
 @tasks.loop(minutes=5)
 async def monitor_streams():
-    """Verifica periodicamente os streamers monitorados."""
-    logger.info("🔍 Análise de alvos iniciada...")
-    try:
-        data = await get_cached_data(bot.drive_service)
-        if not data:
-            logger.error("⚠️ Dados não carregados corretamente! Alerta: Falha na operação.")
-            return
-
-        # Monitorar Twitch
-        if bot.twitch_api:
-            all_streamers_to_check = set()
-            for streamers in data.get("streamers", {}).values():
-                all_streamers_to_check.update(streamers.keys())
-            
-            if all_streamers_to_check:
-                live_streamers_data = await bot.twitch_api.get_live_streams(list(all_streamers_to_check))
-                live_streamers = {stream["user_login"].lower() for stream in live_streamers_data}
-                
-                for guild_id_str, streamers_map in data["streamers"].items():
-                    guild = bot.get_guild(int(guild_id_str))
-                    if not guild: continue
-                    live_role = await ensure_live_role(guild)
-                    if not live_role: continue
-
-                    for twitch_name, discord_id in streamers_map.items():
-                        member = guild.get_member(int(discord_id))
-                        if not member: continue
-                        
-                        is_live = twitch_name in live_streamers
-                        has_role = live_role in member.roles
-                        
-                        if is_live and not has_role:
-                            await member.add_roles(live_role, reason="Streamer está ao vivo")
-                            logger.info(f"✅ Cargo 'AO VIVO' adicionado para {member.name} (Twitch). Missão concluída.")
-                        elif not is_live and has_role:
-                            await member.remove_roles(live_role, reason="Streamer não está mais ao vivo")
-                            logger.info(f"✅ Cargo 'AO VIVO' removido de {member.name} (Twitch). Missão concluída.")
-
-        # Monitorar YouTube
-        if bot.youtube_api:
-            for guild_id_str, channels_map in data.get("youtube_channels", {}).items():
-                guild = bot.get_guild(int(guild_id_str))
-                if not guild: continue
-                live_role = await ensure_live_role(guild)
-                if not live_role: continue
-
-                for youtube_id, config in channels_map.items():
-                    discord_id_str = config.get("discord_user_id")
-                    if not discord_id_str: 
-                        logger.warning(f"❌ Valor de discord_user_id inválido ou ausente para o canal {youtube_id}.")
-                        continue
-
-                    try:
-                        discord_id = int(discord_id_str)
-                    except (ValueError, TypeError):
-                        logger.error(f"❌ Valor inválido para discord_user_id: '{discord_id_str}' no canal {youtube_id}")
-                        continue
-                    
-                    member = guild.get_member(discord_id)
-                    if not member:
-                        logger.warning(f"❌ Membro com ID {discord_id} vinculado ao canal do YouTube não encontrado.")
-                        continue
-                    
-                    is_live = await bot.youtube_api.is_channel_live(youtube_id)
-                    has_role = live_role in member.roles
-                    
-                    if is_live and not has_role:
-                        await member.add_roles(live_role, reason="Streamer está ao vivo no YouTube")
-                        logger.info(f"✅ Cargo 'AO VIVO' adicionado para {member.name} (YouTube). Missão concluída.")
-                    elif not is_live and has_role:
-                        await member.remove_roles(live_role, reason="Streamer não está mais ao vivo")
-                        logger.info(f"✅ Cargo 'AO VIVO' removido de {member.name} (YouTube). Missão concluída.")
-
-    except Exception as e:
-        logger.error(f"❌ Falha no monitoramento: {e}. Alerta: Falha na operação.")
-
-
-# ========== COMANDOS DE APLICAÇÃO (SLASH) ========== #
-
-@bot.tree.command(name="adicionar_twitch", description="Adiciona um streamer da Twitch para monitoramento")
-@app_commands.describe(
-    nome_twitch="Nome de usuário da Twitch (ex: alanzoka)",
-    usuario_discord="O usuário do Discord a ser vinculado"
-)
-@app_commands.checks.has_permissions(administrator=True)
-async def adicionar_twitch(
-    interaction: discord.Interaction,
-    nome_twitch: str,
-    usuario_discord: discord.Member
-):
-    await interaction.response.defer(ephemeral=True)
-    try:
-        data = await get_cached_data(bot.drive_service)
-        guild_id = str(interaction.guild.id)
-        
-        if guild_id not in data.get("streamers", {}):
-            data["streamers"][guild_id] = {}
-
-        if nome_twitch.lower() in data["streamers"][guild_id]:
-            return await interaction.followup.send(f"⚠️ {nome_twitch} já é um alvo na Twitch! Alerta: Falha na operação.", ephemeral=True)
-
-        data["streamers"][guild_id][nome_twitch.lower()] = str(usuario_discord.id)
-        await set_cached_data(data, bot.drive_service)
-
-        await interaction.followup.send(
-            f"✅ **{nome_twitch}** adicionado ao sistema e vinculado a {usuario_discord.mention}. Missão concluída.",
-            ephemeral=True
-        )
-    except Exception as e:
-        logger.error(f"❌ Erro ao adicionar alvo Twitch: {e}. Alerta: Falha na operação.")
-        await interaction.followup.send("❌ Erro ao adicionar alvo Twitch. Alerta: Falha na operação.", ephemeral=True)
-
-@bot.tree.command(name="adicionar_youtube", description="Adiciona um canal do YouTube para monitoramento")
-@app_commands.describe(
-    url_canal="URL do canal do YouTube",
-    usuario_discord="O usuário do Discord a ser vinculado (opcional)"
-)
-@app_commands.checks.has_permissions(administrator=True)
-async def adicionar_youtube(
-    interaction: discord.Interaction,
-    url_canal: str,
-    usuario_discord: Optional[discord.Member] = None
-):
-    """Correção do erro 10062 com tratamento adequado de tempo"""
+    logger.info("🔍 Iniciando verificação de streams...")
+    data = await get_cached_data(bot.drive_service)
     
-    # 1. Responder IMEDIATAMENTE para evitar timeout
+    live_twitch_users = []
+    
+    # 1. Verificação da Twitch
+    twitch_users_to_check = []
+    for guild_id, streamers in data.get('streamers', {}).items():
+        twitch_users_to_check.extend([s.get('twitch_username') for s in streamers.values()])
+
+    if twitch_users_to_check:
+        try:
+            live_streams = await bot.twitch_api.get_live_streams(twitch_users_to_check)
+            live_twitch_users = [s['user_login'].lower() for s in live_streams]
+            logger.info(f"✅ Twitch: {len(live_twitch_users)} canais ao vivo encontrados.")
+        except Exception as e:
+            logger.error(f"❌ Erro ao verificar lives da Twitch: {e}")
+
+    # 2. Atualização dos cargos
+    for guild in bot.guilds:
+        if guild.id in data['streamers']:
+            role = bot.guild_live_roles.get(guild.id)
+            if not role:
+                role = discord.utils.get(guild.roles, name=bot.live_role)
+                if not role:
+                    logger.warning(f"Cargo '{bot.live_role}' não encontrado no servidor '{guild.name}'. Criando...")
+                    try:
+                        role = await guild.create_role(name=bot.live_role, permissions=discord.Permissions.none(), colour=discord.Colour.red())
+                        bot.guild_live_roles[guild.id] = role
+                    except discord.Forbidden:
+                        logger.error(f"❌ Sem permissão para criar o cargo no servidor '{guild.name}'.")
+                        continue
+                else:
+                    bot.guild_live_roles[guild.id] = role
+            
+            for user_id, config in data['streamers'][guild.id].items():
+                member = guild.get_member(int(user_id))
+                if not member:
+                    continue
+                
+                is_live = config['twitch_username'].lower() in live_twitch_users
+                has_role = role in member.roles
+                
+                if is_live and not has_role:
+                    await member.add_roles(role, reason="Streamer iniciou a live")
+                    logger.info(f"✅ Adicionado cargo 'AO VIVO' para {member.display_name} ({config['twitch_username']}).")
+                elif not is_live and has_role:
+                    await member.remove_roles(role, reason="Streamer encerrou a live")
+                    logger.info(f"✅ Removido cargo 'AO VIVO' de {member.display_name} ({config['twitch_username']}).")
+
+    logger.info("✅ Verificação de streams concluída.")
+    
+@bot.tree.command(name="adicionar_twitch", description="Adiciona um streamer da Twitch para monitoramento.")
+@app_commands.describe(nome_twitch="O nome de usuário da Twitch (ex: monark)")
+async def adicionar_twitch(interaction: discord.Interaction, nome_twitch: str, usuario_discord: Optional[discord.Member]):
     if not interaction.response.is_done():
         await interaction.response.defer(ephemeral=True)
     
-    try:
-        # 2. Verificar se a API está disponível
-        if not bot.youtube_api:
-            return await interaction.followup.send(
-                "❌ Serviço do YouTube não está disponível.",
-                ephemeral=True
-            )
+    if not bot.drive_service or not bot.twitch_api:
+        await interaction.followup.send("❌ Serviço do Google Drive ou Twitch não está disponível. Tente novamente mais tarde.", ephemeral=True)
+        return
 
-        # 3. Processamento principal (pode ser demorado)
-        youtube_id = await bot.youtube_api.get_channel_id_from_url(url_canal)
-        if not youtube_id:
-            return await interaction.followup.send(
-                "❌ ID do canal não encontrado. Verifique a URL.",
-                ephemeral=True
-            )
-
-        data = await get_cached_data(bot.drive_service)
-        guild_id = str(interaction.guild.id)
-        
-        if youtube_id in data.get("youtube_channels", {}).get(guild_id, {}):
-            return await interaction.followup.send(
-                "⚠️ Canal já está sendo monitorado.",
-                ephemeral=True
-            )
-
-        # 4. Atualizar dados
-        if guild_id not in data["youtube_channels"]:
-            data["youtube_channels"][guild_id] = {}
-            
-        data["youtube_channels"][guild_id][youtube_id] = {
-            "discord_user_id": str(usuario_discord.id) if usuario_discord else None
-        }
-        
-        await set_cached_data(data, bot.drive_service)
-        
-        # 5. Resposta final
-        await interaction.followup.send(
-            f"✅ Canal `{youtube_id}` adicionado com sucesso.",
-            ephemeral=True
-        )
-
-    except Exception as e:
-        logger.error(f"Erro em adicionar_youtube: {type(e).__name__}: {e}")
-        try:
-            await interaction.followup.send(
-                "❌ Erro ao processar solicitação.",
-                ephemeral=True
-            )
-        except:
-            pass  # Falha silenciosa se não puder responder
-
-@bot.tree.command(name="remover_twitch", description="Remove um streamer da Twitch do monitoramento")
-@app_commands.describe(nome_twitch="Nome do streamer da Twitch")
-@app_commands.checks.has_permissions(administrator=True)
-async def remover_twitch(interaction: discord.Interaction, nome_twitch: str):
-    await interaction.response.defer(ephemeral=True)
-    try:
-        data = await get_cached_data(bot.drive_service)
-        guild_id = str(interaction.guild.id)
-
-        if guild_id not in data.get("streamers", {}) or nome_twitch.lower() not in data["streamers"][guild_id]:
-            return await interaction.followup.send(
-                f"⚠️ O streamer `{nome_twitch}` não está na lista de alvos! Alerta: Falha na operação.",
-                ephemeral=True
-            )
-
-        discord_id = data["streamers"][guild_id].pop(nome_twitch.lower())
-        await set_cached_data(data, bot.drive_service)
-
-        member = interaction.guild.get_member(int(discord_id))
-        if member:
-            live_role = await ensure_live_role(interaction.guild)
-            if live_role and live_role in member.roles:
-                await member.remove_roles(live_role)
-        
-        await interaction.followup.send(
-            f"✅ Streamer `{nome_twitch}` removido do sistema. Missão concluída.",
-            ephemeral=True
-        )
-    except Exception as e:
-        logger.error(f"❌ Erro ao remover alvo Twitch: {e}. Alerta: Falha na operação.")
-        await interaction.followup.send("❌ Erro ao remover alvo Twitch. Alerta: Falha na operação.", ephemeral=True)
-
-
-@bot.tree.command(name="remover_youtube", description="Remove um canal do YouTube do monitoramento")
-@app_commands.describe(url_canal="URL ou ID do Canal do YouTube")
-@app_commands.checks.has_permissions(administrator=True)
-async def remover_youtube(interaction: discord.Interaction, url_canal: str):
-    await interaction.response.defer(ephemeral=True)
-    try:
-        youtube_id = await bot.youtube_api.get_channel_id_from_url(url_canal)
-        if not youtube_id:
-            youtube_id = url_canal
-        
-        data = await get_cached_data(bot.drive_service)
-        guild_id = str(interaction.guild.id)
-        
-        if youtube_id in data.get("youtube_channels", {}).get(guild_id, {}):
-            del data["youtube_channels"][guild_id][youtube_id]
-            await set_cached_data(data, bot.drive_service)
-            await interaction.followup.send(
-                f"✅ Canal do YouTube removido do sistema. Missão concluída.",
-                ephemeral=True
-            )
-        else:
-            await interaction.followup.send(
-                f"⚠️ O canal `{url_canal}` não está na lista de alvos! Alerta: Falha na operação.",
-                ephemeral=True
-            )
-    except Exception as e:
-        logger.error(f"❌ Erro ao remover alvo YouTube: {e}. Alerta: Falha na operação.")
-        await interaction.followup.send("❌ Erro ao remover alvo YouTube. Alerta: Falha na operação.", ephemeral=True)
-
-
-@bot.tree.command(name="listar_alvos", description="Mostra a lista de alvos monitorados")
-async def listar_alvos(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
     data = await get_cached_data(bot.drive_service)
     
-    output = "🤖 **RELATÓRIO DE ALVOS**\n\n"
-    guild_id = str(interaction.guild.id)
+    if interaction.guild.id not in data['streamers']:
+        data['streamers'][interaction.guild.id] = {}
+        
+    twitch_user_id = str(usuario_discord.id) if usuario_discord else str(interaction.user.id)
+    
+    if twitch_user_id in data['streamers'][interaction.guild.id]:
+        await interaction.followup.send(f"❌ O usuário já tem um canal da Twitch registrado: **{data['streamers'][interaction.guild.id][twitch_user_id]['twitch_username']}**.", ephemeral=True)
+        return
+
+    data['streamers'][interaction.guild.id][twitch_user_id] = {
+        "twitch_username": nome_twitch.lower(),
+        "discord_user_id": twitch_user_id
+    }
+    
+    success = await set_cached_data(data, bot.drive_service)
+    
+    if success:
+        await interaction.followup.send(f"✅ Streamer **{nome_twitch}** adicionado para monitoramento.", ephemeral=True)
+    else:
+        await interaction.followup.send("❌ Erro ao salvar os dados. Tente novamente mais tarde.", ephemeral=True)
+
+@bot.tree.command(name="remover_twitch", description="Remove um streamer da Twitch do monitoramento.")
+@app_commands.describe(nome_twitch="O nome de usuário da Twitch (ex: monark)")
+async def remover_twitch(interaction: discord.Interaction, nome_twitch: str):
+    if not interaction.response.is_done():
+        await interaction.response.defer(ephemeral=True)
+    
+    if not bot.drive_service:
+        await interaction.followup.send("❌ Serviço do Google Drive não está disponível. Tente novamente mais tarde.", ephemeral=True)
+        return
+        
+    data = await get_cached_data(bot.drive_service)
+    
+    if interaction.guild.id not in data['streamers']:
+        await interaction.followup.send(f"❌ Nenhum streamer da Twitch registrado neste servidor.", ephemeral=True)
+        return
+    
+    found_user_id = None
+    for user_id, config in data['streamers'][interaction.guild.id].items():
+        if config['twitch_username'].lower() == nome_twitch.lower():
+            found_user_id = user_id
+            break
+
+    if found_user_id:
+        del data['streamers'][interaction.guild.id][found_user_id]
+        
+        success = await set_cached_data(data, bot.drive_service)
+        
+        if success:
+            await interaction.followup.send(f"✅ Streamer **{nome_twitch}** removido do monitoramento.", ephemeral=True)
+        else:
+            await interaction.followup.send("❌ Erro ao salvar os dados. Tente novamente mais tarde.", ephemeral=True)
+    else:
+        await interaction.followup.send(f"❌ Streamer **{nome_twitch}** não encontrado na lista.", ephemeral=True)
+
+@bot.tree.command(name="listar_alvos", description="Lista todos os streamers e canais monitorados.")
+async def listar_alvos(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    
+    data = await get_cached_data(bot.drive_service)
+    output = "## 🎯 Alvos de Monitoramento\n\n"
     
     twitch_output = []
-    for streamer, discord_id in data.get("streamers", {}).get(guild_id, {}).items():
-        member = interaction.guild.get_member(int(discord_id))
-        twitch_output.append(
-            f"**Plataforma:** Twitch\n"
-            f"**Nome do canal:** {streamer}\n"
-            f"**Usuário:** {member.mention if member else 'Desconhecido'}\n"
-        )
+    
+    if interaction.guild.id in data['streamers']:
+        for _, config in data['streamers'][interaction.guild.id].items():
+            member = interaction.guild.get_member(int(config.get("discord_user_id"))) if config.get("discord_user_id") else None
+            twitch_output.append(
+                f"**Plataforma:** Twitch\n"
+                f"**Usuário:** {config['twitch_username']}\n"
+                f"**Vinculado a:** {member.mention if member else 'Desconhecido'}\n"
+            )
 
-    youtube_output = []
-    for channel_id, config in data.get("youtube_channels", {}).get(guild_id, {}).items():
-        member = interaction.guild.get_member(int(config.get("discord_user_id"))) if config.get("discord_user_id") else None
-        youtube_output.append(
-            f"**Plataforma:** YouTube\n"
-            f"**ID do canal:** {channel_id}\n"
-            f"**Usuário:** {member.mention if member else 'Desconhecido'}\n"
-        )
-
-    if twitch_output or youtube_output:
-        if twitch_output:
-            output += "--- Twitch ---\n" + "\n".join(twitch_output) + "\n"
-        if youtube_output:
-            output += "--- YouTube ---\n" + "\n".join(youtube_output)
+    if twitch_output:
+        output += "--- Twitch ---\n" + "\n".join(twitch_output) + "\n"
     else:
         output += "Nenhum alvo encontrado no sistema."
 
@@ -388,14 +227,13 @@ async def status(interaction: discord.Interaction):
     data = await get_cached_data(bot.drive_service)
     
     twitch_count = sum(len(g) for g in data.get("streamers", {}).values())
-    youtube_count = sum(len(g) for g in data.get("youtube_channels", {}).values())
     
     await interaction.followup.send(
         content=(
             f"**🤖 STATUS DO T-800**\n"
-            f"⏱ **Tempo de atividade:** `{str(uptime).split('.')[0]}`\n"
-            f"📡 **Servidores ativos:** `{len(bot.guilds)}`\n"
-            f"👀 **Alvos monitorados:** `Twitch: {twitch_count} | YouTube: {youtube_count}`"
+            f"⏱ **Tempo de atividade:** {uptime.days}d {uptime.seconds//3600}h {(uptime.seconds//60)%60}m\n"
+            f"🌐 **Servidores conectados:** {len(bot.guilds)}\n"
+            f"🎯 **Alvos monitorados (Twitch):** {twitch_count}\n"
         ),
         ephemeral=True
     )
