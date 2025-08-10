@@ -52,38 +52,35 @@ class GoogleDriveService:
                 fields='nextPageToken, files(id, name)',
                 pageSize=1
             ).execute()
-            items = results.get('files', [])
-            return items[0] if items else None
+            return results.get('files', [None])[0]
         except HttpError as e:
-            logger.error(f"Erro ao buscar arquivo no Drive: {e}")
+            logger.error(f"Erro ao buscar arquivo: {e}")
             return None
 
     def download_file(self, file_name: str, local_path: str) -> bool:
         file_info = self.find_file(file_name)
         if not file_info:
-            logger.info(f"Arquivo '{file_name}' não encontrado no Google Drive.")
+            logger.info(f"Arquivo {file_name} não encontrado no Drive")
             return False
 
-        request = self.service.files().get_media(fileId=file_info['id'])
-        file_handle = io.BytesIO()
-        downloader = MediaIoBaseDownload(file_handle, request)
-        done = False
         try:
-            while done is False:
-                status, done = downloader.next_chunk()
-            file_handle.seek(0)
-            with open(local_path, 'wb') as f:
-                f.write(file_handle.read())
-            logger.info(f"✅ Download de '{file_name}' concluído.")
+            request = self.service.files().get_media(fileId=file_info['id'])
+            with io.BytesIO() as fh:
+                downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while not done:
+                    _, done = downloader.next_chunk()
+                
+                with open(local_path, 'wb') as f:
+                    f.write(fh.getvalue())
+            
+            logger.info(f"Download de {file_name} concluído")
             return True
-        except HttpError as e:
-            logger.error(f"Erro ao baixar arquivo do Drive: {e}")
-            return False
         except Exception as e:
-            logger.error(f"Erro inesperado ao baixar arquivo: {e}")
+            logger.error(f"Erro ao baixar arquivo: {e}")
             return False
 
-    def upload_file(self, file_path: str, file_name: str) -> Optional[str]:
+    def upload_file(self, file_path: str, file_name: str) -> bool:
         try:
             file_metadata = {
                 'name': file_name,
@@ -97,21 +94,19 @@ class GoogleDriveService:
             
             existing = self.find_file(file_name)
             if existing:
-                file = self.service.files().update(
+                self.service.files().update(
                     fileId=existing['id'],
                     media_body=media
                 ).execute()
             else:
-                file = self.service.files().create(
+                self.service.files().create(
                     body=file_metadata,
                     media_body=media,
                     fields='id'
                 ).execute()
-                
-            return file.get('id')
-        except HttpError as e:
-            logger.error(f"Erro ao enviar arquivo para o Drive: {e}")
-            return None
+            
+            logger.info(f"Upload de {file_name} concluído")
+            return True
         except Exception as e:
-            logger.error(f"Erro inesperado ao enviar arquivo: {e}")
-            return None
+            logger.error(f"Erro ao enviar arquivo: {e}")
+            return False
