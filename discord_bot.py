@@ -165,24 +165,44 @@ async def sync(ctx: commands.Context):
         await ctx.send(f"❌ Erro ao sincronizar: {e}. Alerta: Falha na operação.")
 
 # ========== COMANDOS DE APLICAÇÃO (SLASH) ========== #
-@bot.tree.command(name="status", description="Mostra o status do T-800")
-async def status(interaction: discord.Interaction):
+@bot.tree.command(name="listar", description="Mostra a lista de alvos monitorados")
+async def listar_streamers(interaction: discord.Interaction):
     # A primeira ação deve ser sempre adiar a resposta
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(ephemeral=True) 
     
     # Agora, execute a lógica que pode demorar
-    uptime = datetime.now() - bot.start_time
     data = await get_data()
     
-    # Edite a resposta original com os dados coletados
-    await interaction.edit_original_response(
-        content=(
-            f"**🤖 STATUS DO T-800**\n"
-            f"⏱ **Tempo de atividade:** `{str(uptime).split('.')[0]}`\n"
-            f"📡 **Servidores ativos:** `{len(bot.guilds)}`\n"
-            f"👀 **Alvos monitorados:** `Twitch: {len(data['monitored_users']['twitch'])} | YouTube: {len(data['monitored_users']['youtube'])}`"
+    output = "🤖 **RELATÓRIO DE ALVOS**\n\n"
+    
+    twitch_output = []
+    for streamer, info in data["monitored_users"]["twitch"].items():
+        member = interaction.guild.get_member(info.get("added_by"))
+        twitch_output.append(
+            f"**Plataforma:** Twitch\n"
+            f"**Nome do canal:** {streamer}\n"
+            f"**Usuário:** {member.mention if member else 'Desconhecido'}\n"
         )
-    )
+
+    youtube_output = []
+    for channel, info in data["monitored_users"]["youtube"].items():
+        member = interaction.guild.get_member(info.get("added_by"))
+        youtube_output.append(
+            f"**Plataforma:** YouTube\n"
+            f"**Nome do canal:** {channel}\n"
+            f"**Usuário:** {member.mention if member else 'Desconhecido'}\n"
+        )
+
+    if twitch_output:
+        output += "--- Twitch ---\n" + "\n".join(twitch_output) + "\n"
+    if youtube_output:
+        output += "--- YouTube ---\n" + "\n".join(youtube_output)
+    
+    if not twitch_output and not youtube_output:
+        output += "Nenhum alvo encontrado no sistema."
+
+    # Edite a resposta original com os dados coletados
+    await interaction.edit_original_response(content=output)
 
 @bot.tree.command(name="adicionar", description="Adiciona um streamer para monitoramento")
 @app_commands.describe(
