@@ -2,7 +2,7 @@ import os
 import aiohttp
 import asyncio
 import logging
-
+from typing import List, Dict, Any, Optional
 logger = logging.getLogger(__name__)
 
 class TwitchAPI:
