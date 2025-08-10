@@ -46,26 +46,37 @@ async def load_data_from_drive_if_exists(drive_service: Optional['GoogleDriveSer
                 with open(file_path, 'r') as f:
                     content = f.read()
             
+            if not content.strip():  # Verifica se o arquivo está vazio
+                logger.warning(f"Arquivo {file_path} está vazio")
+                return False
+                
             data = json.loads(content)
             if validate_data_structure(data):
                 DATA_CACHE.update(data)
                 return True
+            return False
+        except json.JSONDecodeError as e:
+            logger.error(f"Erro ao decodificar JSON em {file_path}: {str(e)}")
+            return False
         except Exception as e:
             logger.error(f"Erro ao carregar {file_path}: {str(e)}")
-        return False
+            return False
 
     try:
+        # 1. Tenta carregar do Google Drive
         if drive_service:
             if await asyncio.to_thread(drive_service.download_file, DATA_FILE, DATA_FILE):
                 if await load_from_file(DATA_FILE):
                     logger.info("Dados carregados do Google Drive")
                     return
 
+        # 2. Tenta carregar localmente
         if os.path.exists(DATA_FILE):
             if await load_from_file(DATA_FILE):
                 logger.info("Dados carregados do arquivo local")
                 return
 
+        # 3. Cria estrutura vazia se não existir
         DATA_CACHE.update({
             "streamers": {},
             "youtube_channels": {},
@@ -74,6 +85,11 @@ async def load_data_from_drive_if_exists(drive_service: Optional['GoogleDriveSer
                 "youtube": {}
             }
         })
+        logger.info("Novo arquivo de dados criado")
+        
+    except Exception as e:
+        logger.critical(f"Falha crítica ao carregar dados: {str(e)}")
+        raise
         logger.info("Novo arquivo de dados criado")
         
     except Exception as e:
