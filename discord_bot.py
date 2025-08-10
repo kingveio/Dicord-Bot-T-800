@@ -225,11 +225,23 @@ async def adicionar_youtube(
     url_canal: str,
     usuario_discord: Optional[discord.Member] = None
 ):
-    await interaction.response.defer(ephemeral=True)
     try:
+        # Responder imediatamente para evitar timeout
+        await interaction.response.defer(ephemeral=True)
+        
+        # Verificar se a API do YouTube está disponível
+        if not bot.youtube_api:
+            return await interaction.followup.send(
+                "❌ Serviço do YouTube não está disponível no momento.",
+                ephemeral=True
+            )
+
         youtube_id = await bot.youtube_api.get_channel_id_from_url(url_canal)
         if not youtube_id:
-            return await interaction.followup.send("❌ Não foi possível encontrar o ID do canal do YouTube. Verifique a URL.", ephemeral=True)
+            return await interaction.followup.send(
+                "❌ Não foi possível encontrar o ID do canal do YouTube. Verifique a URL.",
+                ephemeral=True
+            )
 
         data = await get_cached_data(bot.drive_service)
         guild_id = str(interaction.guild.id)
@@ -238,11 +250,15 @@ async def adicionar_youtube(
             data["youtube_channels"][guild_id] = {}
         
         if youtube_id in data["youtube_channels"][guild_id]:
-            return await interaction.followup.send("⚠️ Este canal do YouTube já é um alvo! Alerta: Falha na operação.", ephemeral=True)
+            return await interaction.followup.send(
+                "⚠️ Este canal do YouTube já é um alvo! Alerta: Falha na operação.",
+                ephemeral=True
+            )
 
         data["youtube_channels"][guild_id][youtube_id] = {
             "discord_user_id": str(usuario_discord.id) if usuario_discord else None
         }
+        
         await set_cached_data(data, bot.drive_service)
         
         await interaction.followup.send(
@@ -251,8 +267,13 @@ async def adicionar_youtube(
         )
     except Exception as e:
         logger.error(f"❌ Erro ao adicionar alvo YouTube: {e}. Alerta: Falha na operação.")
-        await interaction.followup.send("❌ Erro ao adicionar alvo YouTube. Alerta: Falha na operação.", ephemeral=True)
-
+        try:
+            await interaction.followup.send(
+                "❌ Erro ao adicionar alvo YouTube. Alerta: Falha na operação.",
+                ephemeral=True
+            )
+        except:
+            pass  # Se já não puder responder, ignora
 
 @bot.tree.command(name="remover_twitch", description="Remove um streamer da Twitch do monitoramento")
 @app_commands.describe(nome_twitch="Nome do streamer da Twitch")
