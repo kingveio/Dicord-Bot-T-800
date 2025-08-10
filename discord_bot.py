@@ -3,10 +3,10 @@ from discord.ext import commands, tasks
 from discord import app_commands
 import logging
 from datetime import datetime
-from typing import Optional, Dict, List
+from typing import Optional, Dict
 import os
 import asyncio
-from data_manager import get_data, update_monitored_users
+from data_manager import get_data, save_data
 
 # Configuração T-800
 intents = discord.Intents.default()
@@ -27,40 +27,27 @@ class T800Bot(commands.Bot):
         self.live_role = "AO VIVO"
         self.system_ready = False
         self.synced = False
-        self.monitored_users = {
-            "twitch": {},
-            "youtube": {}
-        }
 
 bot = T800Bot()
 
 @bot.event
 async def setup_hook():
     """Configuração inicial do T-800"""
-    owner_id = os.getenv("BOT_OWNER_ID", "659611103399116800")
-    bot.owner_id = int(owner_id)
-    
-    # Carrega usuários monitorados
-    data = await get_data()
-    bot.monitored_users = data.get("monitored_users", {
-        "twitch": {},
-        "youtube": {}
-    })
-    
-    await bot.tree.sync()
-    logging.info("Sistemas de armas carregados - Comandos sincronizados")
-
-@bot.event
-async def on_ready():
-    """Ativação do sistema T-800"""
-    if not bot.synced:
-        try:
-            for guild in bot.guilds:
-                await bot.tree.sync(guild=guild)
-            bot.synced = True
-            logging.info("Sistemas de mira sincronizados por servidor")
-        except Exception as e:
-            logging.error(f"Falha na sincronização: {e}")
+    try:
+        # Carrega dados iniciais
+        data = await get_data()
+        if not data:
+            await save_data()
+        
+        # Configura owner
+        owner_id = os.getenv("BOT_OWNER_ID", "659611103399116800")
+        bot.owner_id = int(owner_id)
+        
+        # Sincroniza comandos
+        await bot.tree.sync()
+        logger.info("Sistemas de armas carregados - Comandos sincronizados")
+    except Exception as e:
+        logger.error(f"Falha no setup_hook: {e}")
     
     bot.system_ready = True
     logging.info(f"T-800 ONLINE | ID: {bot.user.id} | Servidores: {len(bot.guilds)}")
