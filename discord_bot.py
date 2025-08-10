@@ -88,7 +88,7 @@ async def ensure_live_role(guild: discord.Guild) -> Optional[discord.Role]:
         return None
 
 # ========== TAREFA PERIÓDICA ========== #
-@tasks.loop(minutes=1)
+@tasks.loop(minutes=5)
 async def monitor_streams():
     """Verifica periodicamente os streamers monitorados."""
     if not bot.system_ready:
