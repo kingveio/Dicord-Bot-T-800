@@ -1,59 +1,77 @@
+import os
 import aiohttp
+import asyncio
 import logging
-from typing import Optional, Dict
-from urllib.parse import urlparse, parse_qs
+from typing import Optional, Dict, List
 
-logger = logging.getLogger("T-800-YT")
+logger = logging.getLogger(__name__)
 
 class YouTubeAPI:
-    def __init__(self, session: aiohttp.ClientSession, api_key: str):
-        self.session = session
+    def __init__(self, api_key: str):
         self.api_key = api_key
-        self.base_url = "https://www.googleapis.com/youtube/v3/"
+        self.session = aiohttp.ClientSession()
 
-    async def get_channel_id(self, url: str) -> Optional[str]:
-        try:
-            parsed = urlparse(url)
-            
-            if "youtube.com" not in parsed.netloc and "youtu.be" not in parsed.netloc:
-                return None
+    async def close(self):
+        await self.session.close()
 
-            # Caso 1: URL com /channel/
-            if "/channel/" in url:
-                return url.split("/channel/")[1].split("/")[0]
-            
-            # Caso 2: URL com /@ (handle)
-            elif "/@" in url:
-                handle = url.split("/@")[1].split("/")[0]
-                return await self._search_channel(handle)
-            
-            # Caso 3: URL com parâmetro channel_id
-            elif "channel_id" in parse_qs(parsed.query):
-                return parse_qs(parsed.query)["channel_id"][0]
-            
-            return None
-        except Exception as e:
-            logger.error(f"FALHA NA IDENTIFICAÇÃO: {str(e)}")
-            return None
+    async def get_channel_id_from_url(self, url: str) -> Optional[str]:
+        """Extrai o ID do canal a partir de uma URL ou handle."""
+        
+        async def _search_channel_by_query(query: str, search_type: str = "forUsername") -> Optional[str]:
+            params = {
+                'part': 'snippet',
+                'q': query,
+                'type': 'channel',
+                'key': self.api_key
+            }
+            if search_type == "forHandle":
+                 params['forHandle'] = query
+            else:
+                 params['forUsername'] = query
 
-    async def _search_channel(self, query: str) -> Optional[str]:
-        endpoint = f"{self.base_url}search?part=snippet&q={query}&type=channel&maxResults=1&key={self.api_key}"
-        try:
-            async with self.session.get(endpoint, timeout=10) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    return data.get('items', [{}])[0].get('id', {}).get('channelId')
-        except Exception as e:
-            logger.error(f"FALHA NA BUSCA: {str(e)}")
+            url = f'https://googleusercontent.com/youtube/v3/search'
+            
+            try:
+                async with self.session.get(url, params=params) as response:
+                    response.raise_for_status()
+                    data = await response.json()
+                    if data.get('items'):
+                        return data['items'][0]['snippet']['channelId']
+            except Exception as e:
+                logger.error(f"❌ Erro ao buscar ID do canal '{query}' na API do YouTube: {e}")
             return None
 
-    async def check_live_status(self, channel_id: str) -> bool:
-        endpoint = f"{self.base_url}search?part=snippet&channelId={channel_id}&eventType=live&type=video&key={self.api_key}"
+        # Tenta extrair o ID diretamente da URL
+        match = re.search(r'(?:channel|user|c)\/([^/]+)', url)
+        if match:
+            return match.group(1)
+        
+        # Tenta o formato de handle (@nome)
+        match_handle = re.search(r'@([\w-]+)', url)
+        if match_handle:
+            return await _search_channel_by_query(match_handle.group(1), "forHandle")
+        
+        # Retorna o próprio input se já for um ID válido
+        if len(url) == 24 and url.startswith("UC"):
+            return url
+        
+        return None
+
+    async def is_channel_live(self, channel_id: str) -> bool:
+        """Verifica se um canal está ao vivo."""
+        url = f'https://googleusercontent.com/youtube/v3/search'
+        params = {
+            'key': self.api_key,
+            'channelId': channel_id,
+            'part': 'snippet',
+            'eventType': 'live',
+            'type': 'video'
+        }
         try:
-            async with self.session.get(endpoint, timeout=10) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    return len(data.get('items', [])) > 0
+            async with self.session.get(url, params=params) as response:
+                response.raise_for_status()
+                data = await response.json()
+                return len(data.get('items', [])) > 0
         except Exception as e:
-            logger.error(f"FALHA NA VERIFICAÇÃO DE LIVE: {str(e)}")
+            logger.error(f"❌ Erro ao verificar live do canal {channel_id}: {e}")
             return False
