@@ -1,3 +1,5 @@
+# discord_bot.py
+
 import os
 import re
 import asyncio
@@ -27,7 +29,7 @@ logger = logging.getLogger(__name__)
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
-intents.voice_states = False  # Desabilita a voz para remover o aviso PyNaCl
+intents.voice_states = False
 
 class StreamBot(commands.Bot):
     def __init__(self):
@@ -175,6 +177,7 @@ async def monitor_streams():
     except Exception as e:
         logger.error(f"❌ Falha no monitoramento: {e}. Alerta: Falha na operação.")
 
+
 # ========== COMANDOS DE APLICAÇÃO (SLASH) ========== #
 
 @bot.tree.command(name="adicionar_twitch", description="Adiciona um streamer da Twitch para monitoramento")
@@ -292,8 +295,8 @@ async def remover_youtube(interaction: discord.Interaction, url_canal: str):
     try:
         youtube_id = await bot.youtube_api.get_channel_id_from_url(url_canal)
         if not youtube_id:
-            youtube_id = url_canal # Tenta o próprio input como ID se a conversão falhar
-
+            youtube_id = url_canal
+        
         data = await get_cached_data(bot.drive_service)
         guild_id = str(interaction.guild.id)
         
