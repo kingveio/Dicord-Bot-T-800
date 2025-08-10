@@ -4,13 +4,11 @@ import threading
 import asyncio
 import logging
 import aiohttp
-import json
 from datetime import datetime
 from flask import Flask, jsonify
 from drive_service import GoogleDriveService
 from twitch_api import TwitchAPI
 from youtube_api import YouTubeAPI
-from data_manager import get_data, save_data
 from discord_bot import bot
 
 # Configuração do logger antes de qualquer uso
@@ -27,20 +25,19 @@ def configure_logging():
         ]
     )
 
+configure_logging()
+
 # Configuração T-800
-os.environ.setdefault('DISABLE_VOICE', 'true')
 print("╔════════════════════════════════════════════╗")
 print("║        SISTEMA T-800 INICIALIZANDO         ║")
 print("║    Versão 2.0 - Monitoramento Ativo        ║")
 print("╚════════════════════════════════════════════╝")
 
-configure_logging()
-
 # Lista de variáveis de ambiente obrigatórias
 REQUIRED_ENV = [
     "DISCORD_TOKEN", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET",
     "DRIVE_FOLDER_ID", "DRIVE_PRIVATE_KEY_ID", "DRIVE_PRIVATE_KEY",
-    "DRIVE_CLIENT_ID", "DRIVE_CLIENT_EMAIL", "YOUTUBE_API_KEY" # Adicionado DRIVE_CLIENT_EMAIL
+    "DRIVE_CLIENT_ID", "DRIVE_CLIENT_EMAIL", "YOUTUBE_API_KEY"
 ]
 
 if missing := [var for var in REQUIRED_ENV if var not in os.environ]:
@@ -58,25 +55,9 @@ def system_status():
         "mission": "monitorar_streams"
     })
 
-# Rota para ping de verificação de saúde do Render
 @app.route('/ping')
 def ping():
     return jsonify({'status': 'online'})
-
-async def initialize_data():
-    """Inicializa o serviço de dados e o Google Drive"""
-    try:
-        drive_service = GoogleDriveService()
-        if not drive_service.service:
-            raise Exception("Falha na autenticação do Google Drive.")
-        
-        # O bot irá usar a instância do drive_service para salvar e carregar dados
-        # A chamada para get_data() já carrega os dados ou cria uma nova estrutura.
-        
-        return drive_service
-    except Exception as e:
-        logger.critical(f"Falha ao inicializar Google Drive: {e}")
-        return None
 
 async def main_async():
     try:
@@ -93,9 +74,9 @@ async def main_async():
             )
             
             # Inicializa o serviço do Google Drive e associa ao bot
-            bot.drive_service = await initialize_data()
+            bot.drive_service = GoogleDriveService()
             
-            if bot.drive_service:
+            if bot.drive_service.service:
                 logger.info("Serviço do Google Drive ativado.")
             else:
                 logger.warning("Serviço do Google Drive não disponível. O bot não persistirá os dados.")
