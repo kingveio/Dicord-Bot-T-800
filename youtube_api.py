@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 class YouTubeAPI:
     def __init__(self, api_key: str):
         self.api_key = api_key
+        # A sessão é criada aqui, mas será usada de forma segura
         self.session = aiohttp.ClientSession()
 
     async def close(self):
@@ -30,10 +31,10 @@ class YouTubeAPI:
             elif search_type == "forUsername":
                  params['forUsername'] = query
             
-            # URL da API corrigida
             api_url = 'https://www.googleapis.com/youtube/v3/search'
             
             try:
+                # O uso de `async with` é a forma correta
                 async with self.session.get(api_url, params=params) as response:
                     response.raise_for_status()
                     data = await response.json()
@@ -61,7 +62,6 @@ class YouTubeAPI:
 
     async def is_channel_live(self, channel_id: str) -> bool:
         """Verifica se um canal está ao vivo."""
-        # URL da API corrigida
         api_url = 'https://www.googleapis.com/youtube/v3/search'
         params = {
             'key': self.api_key,
@@ -71,6 +71,7 @@ class YouTubeAPI:
             'type': 'video'
         }
         try:
+            # O uso de `async with` é a forma correta
             async with self.session.get(api_url, params=params) as response:
                 response.raise_for_status()
                 data = await response.json()
