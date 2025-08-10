@@ -12,8 +12,23 @@ class TwitchAPI:
         self.token = None
 
     async def _get_auth_token(self):
-        # Implementação do sistema de autenticação
-        pass
+        try:
+            url = "https://id.twitch.tv/oauth2/token"
+            params = {
+                "client_id": self.client_id,
+                "client_secret": self.client_secret,
+                "grant_type": "client_credentials"
+            }
+            
+            async with self.session.post(url, params=params) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    self.token = data.get('access_token')
+                    logger.info("Token de autenticação Twitch obtido com sucesso")
+                else:
+                    logger.error(f"Falha ao obter token Twitch: {resp.status}")
+        except Exception as e:
+            logger.error(f"FALHA NA AUTENTICAÇÃO: {str(e)}")
 
     async def check_live_channels(self, channels: List[str]) -> Dict[str, bool]:
         try:
