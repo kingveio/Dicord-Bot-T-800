@@ -52,10 +52,12 @@ class YouTubeAPI:
 
         if search_type == "forHandle":
             params['forHandle'] = query
-            del params['q'] # A API do YouTube requer 'forHandle' ou 'q', mas não ambos
+            if 'q' in params:
+                del params['q']
         elif search_type == "forUsername":
             params['forUsername'] = query
-            del params['q']
+            if 'q' in params:
+                del params['q']
 
         try:
             if self.session is None or self.session.closed:
@@ -75,3 +77,22 @@ class YouTubeAPI:
             logger.error(f"❌ Erro inesperado ao buscar ID do canal '{query}': {e}")
         
         return None
+
+    async def is_channel_live(self, channel_id: str) -> bool:
+        """Verifica se um canal está ao vivo."""
+        api_url = 'https://www.googleapis.com/youtube/v3/search'
+        params = {
+            'key': self.api_key,
+            'channelId': channel_id,
+            'part': 'snippet',
+            'eventType': 'live',
+            'type': 'video'
+        }
+        try:
+            async with self.session.get(api_url, params=params) as response:
+                response.raise_for_status()
+                data = await response.json()
+                return len(data.get('items', [])) > 0
+        except Exception as e:
+            logger.error(f"❌ Erro ao verificar live do canal {channel_id}: {e}")
+            return False
