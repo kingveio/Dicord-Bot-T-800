@@ -1,108 +1,57 @@
 import os
-import sys
-import threading
-import asyncio
 import logging
-import aiohttp
-from datetime import datetime
-from flask import Flask, jsonify
-from drive_service import GoogleDriveService
+from googleapiclient.discovery import build
+from google.oauth2.service_account import Credentials
+from discord_bot import bot as discord_bot, StreamBot
 from twitch_api import TwitchAPI
 from youtube_api import YouTubeAPI
-from discord_bot import bot
 
-# Configuração do logger antes de qualquer uso
-logger = logging.getLogger("T-800")
+# Configuração do logger
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
+    handlers=[
+        logging.FileHandler("bot.log", encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
-def configure_logging():
-    """Configura o sistema de logging"""
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)s | T-800 | %(message)s",
-        handlers=[
-            logging.FileHandler("t800_system.log"),
-            logging.StreamHandler()
-        ]
-    )
-
-configure_logging()
-
-# Configuração T-800
-print("╔════════════════════════════════════════════╗")
-print("║        SISTEMA T-800 INICIALIZANDO         ║")
-print("║    Versão 2.0 - Monitoramento Ativo        ║")
-print("╚════════════════════════════════════════════╝")
-
-# Lista de variáveis de ambiente obrigatórias
-REQUIRED_ENV = [
-    "DISCORD_TOKEN", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET",
-    "DRIVE_FOLDER_ID", "DRIVE_PRIVATE_KEY_ID", "DRIVE_PRIVATE_KEY",
-    "DRIVE_CLIENT_ID", "DRIVE_CLIENT_EMAIL", "YOUTUBE_API_KEY"
-]
-
-if missing := [var for var in REQUIRED_ENV if var not in os.environ]:
-    logger.critical(f"FALHA DE INICIALIZAÇÃO: Variáveis ausentes - {missing}")
-    sys.exit(1)
-
-app = Flask(__name__)
-START_TIME = datetime.now()
-
-@app.route('/status')
-def system_status():
-    return jsonify({
-        "status": "operacional",
-        "uptime": str(datetime.now() - START_TIME),
-        "mission": "monitorar_streams"
-    })
-
-@app.route('/ping')
-def ping():
-    return jsonify({'status': 'online'})
-
-async def main_async():
+# Configuração e inicialização das APIs
+def initialize_apis(bot: StreamBot):
+    """Inicializa as APIs da Twitch, YouTube e Google Drive."""
     try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
-            # Inicializa APIs
-            bot.twitch_api = TwitchAPI(
-                session,
-                os.environ["TWITCH_CLIENT_ID"],
-                os.environ["TWITCH_CLIENT_SECRET"]
-            )
-            bot.youtube_api = YouTubeAPI(
-                session,
-                os.environ["YOUTUBE_API_KEY"]
-            )
+        # Inicialização da Twitch API
+        twitch_client_id = os.getenv("TWITCH_CLIENT_ID")
+        twitch_client_secret = os.getenv("TWITCH_CLIENT_SECRET")
+        if twitch_client_id and twitch_client_secret:
+            bot.twitch_api = TwitchAPI(twitch_client_id, twitch_client_secret)
+            logger.info("✅ Twitch API inicializada com sucesso.")
+        else:
+            logger.error("❌ TWITCH_CLIENT_ID ou TWITCH_CLIENT_SECRET não definidos.")
+
+        # Inicialização da YouTube API
+        youtube_api_key = os.getenv("YOUTUBE_API_KEY")
+        if youtube_api_key:
+            bot.youtube_api = YouTubeAPI(youtube_api_key)
+            logger.info("✅ YouTube API inicializada com sucesso.")
+        else:
+            logger.error("❌ YOUTUBE_API_KEY não definida.")
             
-            # Inicializa o serviço do Google Drive e associa ao bot
-            bot.drive_service = GoogleDriveService()
+        # Inicialização do Google Drive API
+        gcp_credentials_json = os.getenv("GCP_CREDENTIALS")
+        if gcp_credentials_json:
+            creds = Credentials.from_service_account_info(
+                eval(gcp_credentials_json) # Avalia a string para um dict
+            )
+            bot.drive_service = build('drive', 'v3', credentials=creds)
+            logger.info("✅ Google Drive API inicializada com sucesso.")
+        else:
+            logger.error("❌ GCP_CREDENTIALS não definidas.")
             
-            if bot.drive_service.service:
-                logger.info("Serviço do Google Drive ativado.")
-            else:
-                logger.warning("Serviço do Google Drive não disponível. O bot não persistirá os dados.")
-
-            # Inicia servidor web
-            threading.Thread(
-                target=lambda: app.run(
-                    host='0.0.0.0',
-                    port=int(os.environ.get("PORT", 8080)),
-                    use_reloader=False
-                ),
-                daemon=True
-            ).start()
-
-            logger.info("Conectando à rede Discord...")
-            await bot.start(os.environ["DISCORD_TOKEN"])
-
     except Exception as e:
-        logger.critical(f"FALHA CATASTRÓFICA: {str(e)}")
-        raise
+        logger.error(f"❌ Falha ao inicializar as APIs: {e}")
 
-if __name__ == '__main__':
-    try:
-        asyncio.run(main_async())
-    except KeyboardInterrupt:
-        logger.info("Missão interrompida pelo usuário")
-    except Exception as e:
-        logger.error(f"ERRO: {str(e)}")
-        sys.exit(1)
+if __name__ == "__main__":
+    initialize_apis(discord_bot)
+    discord_bot.run(os.getenv("DISCORD_TOKEN"))
