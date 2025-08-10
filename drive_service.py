@@ -43,43 +43,41 @@ class GoogleDriveService:
         )
         return build('drive', 'v3', credentials=creds, cache_discovery=False, static_discovery=False)
 
-def find_file(self, file_name: str) -> Optional[Dict[str, Any]]:
-    query = f"name='{file_name}' and trashed=false and '{os.environ['DRIVE_FOLDER_ID']}' in parents"
-    try:
-        results = self.service.files().list(
-            q=query,
-            spaces='drive',
-            fields='nextPageToken, files(id, name)',
-            pageSize=1
-        ).execute()
-        items = results.get('files', [])
-        return items[0] if items else None  # Verificação segura
-    except HttpError as e:
-        logger.error(f"Erro ao buscar arquivo no Drive: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"Erro inesperado ao buscar arquivo: {e}")
-        return None
+    def find_file(self, file_name: str) -> Optional[Dict[str, Any]]:
+        try:
+            query = f"name='{file_name}' and trashed=false and '{os.environ['DRIVE_FOLDER_ID']}' in parents"
+            results = self.service.files().list(
+                q=query,
+                spaces='drive',
+                fields='files(id, name)',
+                pageSize=1
+            ).execute()
+            files = results.get('files', [])
+            return files[0] if files else None
+        except HttpError as e:
+            logger.error(f"Erro ao buscar arquivo: {e}")
+            return None
 
     def download_file(self, file_name: str, local_path: str) -> bool:
-        file_info = self.find_file(file_name)
-        if not file_info:
-            logger.info(f"Arquivo {file_name} não encontrado no Drive")
-            return False
-
         try:
+            file_info = self.find_file(file_name)
+            if not file_info:
+                logger.warning(f"Arquivo {file_name} não encontrado no Drive")
+                return False
+
             request = self.service.files().get_media(fileId=file_info['id'])
-            with io.BytesIO() as fh:
-                downloader = MediaIoBaseDownload(fh, request)
-                done = False
-                while not done:
-                    _, done = downloader.next_chunk()
-                
-                with open(local_path, 'wb') as f:
-                    f.write(fh.getvalue())
+            fh = io.FileIO(local_path, 'wb')
+            downloader = MediaIoBaseDownload(fh, request)
             
-            logger.info(f"Download de {file_name} concluído")
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+            
+            logger.info(f"Arquivo {file_name} baixado com sucesso")
             return True
+        except HttpError as e:
+            logger.error(f"Erro HTTP ao baixar: {e}")
+            return False
         except Exception as e:
             logger.error(f"Erro ao baixar arquivo: {e}")
             return False
@@ -90,11 +88,7 @@ def find_file(self, file_name: str) -> Optional[Dict[str, Any]]:
                 'name': file_name,
                 'parents': [os.environ['DRIVE_FOLDER_ID']]
             }
-            media = MediaFileUpload(
-                file_path,
-                mimetype='application/json',
-                resumable=True
-            )
+            media = MediaFileUpload(file_path, resumable=True)
             
             existing = self.find_file(file_name)
             if existing:
@@ -109,7 +103,7 @@ def find_file(self, file_name: str) -> Optional[Dict[str, Any]]:
                     fields='id'
                 ).execute()
             
-            logger.info(f"Upload de {file_name} concluído")
+            logger.info(f"Arquivo {file_name} enviado com sucesso")
             return True
         except Exception as e:
             logger.error(f"Erro ao enviar arquivo: {e}")
