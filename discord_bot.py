@@ -83,8 +83,11 @@ async def monitor_streams():
     # 1. Verificação da Twitch
     twitch_users_to_check = []
     for guild_id, streamers in data.get('streamers', {}).items():
-        twitch_users_to_check.extend([s.get('twitch_username') for s in streamers.values()])
-
+        if isinstance(streamers, dict):
+            for s in streamers.values():
+                if isinstance(s, dict):
+                    twitch_users_to_check.append(s.get('twitch_username'))
+    
     if twitch_users_to_check:
         try:
             live_streams = await bot.twitch_api.get_live_streams(twitch_users_to_check)
@@ -115,7 +118,7 @@ async def monitor_streams():
                 if not member:
                     continue
                 
-                is_live = config['twitch_username'].lower() in live_twitch_users
+                is_live = config.get('twitch_username', '').lower() in live_twitch_users
                 has_role = role in member.roles
                 
                 if is_live and not has_role:
@@ -178,7 +181,7 @@ async def remover_twitch(interaction: discord.Interaction, nome_twitch: str):
     
     found_user_id = None
     for user_id, config in data['streamers'][interaction.guild.id].items():
-        if config['twitch_username'].lower() == nome_twitch.lower():
+        if isinstance(config, dict) and config.get('twitch_username', '').lower() == nome_twitch.lower():
             found_user_id = user_id
             break
 
@@ -203,14 +206,15 @@ async def listar_alvos(interaction: discord.Interaction):
     
     twitch_output = []
     
-    if interaction.guild.id in data['streamers']:
+    if interaction.guild.id in data['streamers'] and isinstance(data['streamers'][interaction.guild.id], dict):
         for _, config in data['streamers'][interaction.guild.id].items():
-            member = interaction.guild.get_member(int(config.get("discord_user_id"))) if config.get("discord_user_id") else None
-            twitch_output.append(
-                f"**Plataforma:** Twitch\n"
-                f"**Usuário:** {config['twitch_username']}\n"
-                f"**Vinculado a:** {member.mention if member else 'Desconhecido'}\n"
-            )
+            if isinstance(config, dict):
+                member = interaction.guild.get_member(int(config.get("discord_user_id"))) if config.get("discord_user_id") else None
+                twitch_output.append(
+                    f"**Plataforma:** Twitch\n"
+                    f"**Usuário:** {config.get('twitch_username', 'N/A')}\n"
+                    f"**Vinculado a:** {member.mention if member else 'Desconhecido'}\n"
+                )
 
     if twitch_output:
         output += "--- Twitch ---\n" + "\n".join(twitch_output) + "\n"
@@ -226,8 +230,12 @@ async def status(interaction: discord.Interaction):
     uptime = datetime.now() - bot.start_time
     data = await get_cached_data(bot.drive_service)
     
-    twitch_count = sum(len(g) for g in data.get("streamers", {}).values())
-    
+    twitch_count = 0
+    if isinstance(data.get("streamers"), dict):
+        for guild_streamers in data["streamers"].values():
+            if isinstance(guild_streamers, dict):
+                twitch_count += len(guild_streamers)
+
     await interaction.followup.send(
         content=(
             f"**🤖 STATUS DO T-800**\n"
