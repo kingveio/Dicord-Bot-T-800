@@ -1,10 +1,9 @@
 import os
 import logging
-from googleapiclient.discovery import build
-from google.oauth2.service_account import Credentials
-from discord_bot import bot as discord_bot, StreamBot
+from discord_bot import bot as discord_bot
 from twitch_api import TwitchAPI
 from youtube_api import YouTubeAPI
+from drive_service import GoogleDriveService
 
 # Configuração do logger
 logging.basicConfig(
@@ -17,8 +16,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Configuração e inicialização das APIs
-def initialize_apis(bot: StreamBot):
+def initialize_apis(bot):
     """Inicializa as APIs da Twitch, YouTube e Google Drive."""
     try:
         # Inicialização da Twitch API
@@ -39,15 +37,11 @@ def initialize_apis(bot: StreamBot):
             logger.error("❌ YOUTUBE_API_KEY não definida.")
             
         # Inicialização do Google Drive API
-        gcp_credentials_json = os.getenv("GCP_CREDENTIALS")
-        if gcp_credentials_json:
-            creds = Credentials.from_service_account_info(
-                eval(gcp_credentials_json) # Avalia a string para um dict
-            )
-            bot.drive_service = build('drive', 'v3', credentials=creds)
+        bot.drive_service = GoogleDriveService()
+        if bot.drive_service.service:
             logger.info("✅ Google Drive API inicializada com sucesso.")
         else:
-            logger.error("❌ GCP_CREDENTIALS não definidas.")
+            logger.error("❌ Falha na inicialização do Google Drive API.")
             
     except Exception as e:
         logger.error(f"❌ Falha ao inicializar as APIs: {e}")
