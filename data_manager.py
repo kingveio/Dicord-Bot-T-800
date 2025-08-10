@@ -30,7 +30,7 @@ async def get_data() -> Dict[str, Any]:
             logger.info("Arquivo de dados não encontrado no Drive. Usando dados padrão.")
             return DEFAULT_DATA
         
-        # Validar e atualizar a estrutura se necessário
+        # Valida a estrutura
         if not all(k in data["monitored_users"] for k in ["twitch", "youtube"]):
             data["monitored_users"] = DEFAULT_DATA["monitored_users"]
             logger.warning("Estrutura de dados desatualizada. Usando formato padrão.")
