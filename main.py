@@ -10,7 +10,7 @@ from flask import Flask, jsonify
 from drive_service import GoogleDriveService
 from twitch_api import TwitchAPI
 from youtube_api import YouTubeAPI
-from data_manager import load_data_from_drive_if_exists, save_data, get_data
+from data_manager import get_data, save_data
 from discord_bot import bot
 
 # Configuração do logger antes de qualquer uso
@@ -36,23 +36,18 @@ print("╚═══════════════════════�
 
 configure_logging()
 
+# Lista de variáveis de ambiente obrigatórias
 REQUIRED_ENV = [
     "DISCORD_TOKEN", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET",
     "DRIVE_FOLDER_ID", "DRIVE_PRIVATE_KEY_ID", "DRIVE_PRIVATE_KEY",
-    "DRIVE_CLIENT_ID", "YOUTUBE_API_KEY"
+    "DRIVE_CLIENT_ID", "DRIVE_CLIENT_EMAIL", "YOUTUBE_API_KEY" # Adicionado DRIVE_CLIENT_EMAIL
 ]
 
 if missing := [var for var in REQUIRED_ENV if var not in os.environ]:
     logger.critical(f"FALHA DE INICIALIZAÇÃO: Variáveis ausentes - {missing}")
     sys.exit(1)
 
-from flask import Flask, jsonify
-
 app = Flask(__name__)
-
-@app.route('/ping')
-def ping():
-    return jsonify({'status': 'online'})
 START_TIME = datetime.now()
 
 @app.route('/status')
@@ -63,45 +58,24 @@ def system_status():
         "mission": "monitorar_streams"
     })
 
+# Rota para ping de verificação de saúde do Render
+@app.route('/ping')
+def ping():
+    return jsonify({'status': 'online'})
+
 async def initialize_data():
-    """Inicializa o sistema de dados com fallbacks robustos"""
+    """Inicializa o serviço de dados e o Google Drive"""
     try:
         drive_service = GoogleDriveService()
+        if not drive_service.service:
+            raise Exception("Falha na autenticação do Google Drive.")
         
-        # Verifica se o serviço do Drive está funcional
-        if not hasattr(drive_service, 'download_file'):
-            raise AttributeError("Serviço do Google Drive incompleto")
+        # O bot irá usar a instância do drive_service para salvar e carregar dados
+        # A chamada para get_data() já carrega os dados ou cria uma nova estrutura.
         
-        await load_data_from_drive_if_exists(drive_service)
         return drive_service
-        
     except Exception as e:
-        logger.error(f"Falha ao inicializar Google Drive: {e}")
-        
-        # Fallback para arquivo local
-        if os.path.exists("streamers.json"):
-            try:
-                with open("streamers.json", 'r') as f:
-                    data = json.load(f)
-                    if isinstance(data, dict):
-                        await save_data()
-                        logger.info("Dados carregados do arquivo local")
-            except Exception as e:
-                logger.error(f"Erro ao ler arquivo local: {e}")
-        
-        # Cria nova estrutura se necessário
-        if not os.path.exists("streamers.json"):
-            with open("streamers.json", 'w') as f:
-                json.dump({
-                    "streamers": {},
-                    "youtube_channels": {},
-                    "monitored_users": {
-                        "twitch": {},
-                        "youtube": {}
-                    }
-                }, f, indent=2)
-            logger.info("Novo arquivo de dados criado")
-        
+        logger.critical(f"Falha ao inicializar Google Drive: {e}")
         return None
 
 async def main_async():
@@ -118,9 +92,14 @@ async def main_async():
                 os.environ["YOUTUBE_API_KEY"]
             )
             
-            # Inicializa sistema de dados
+            # Inicializa o serviço do Google Drive e associa ao bot
             bot.drive_service = await initialize_data()
             
+            if bot.drive_service:
+                logger.info("Serviço do Google Drive ativado.")
+            else:
+                logger.warning("Serviço do Google Drive não disponível. O bot não persistirá os dados.")
+
             # Inicia servidor web
             threading.Thread(
                 target=lambda: app.run(
