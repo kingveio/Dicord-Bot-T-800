@@ -213,7 +213,6 @@ async def adicionar_twitch(
         logger.error(f"❌ Erro ao adicionar alvo Twitch: {e}. Alerta: Falha na operação.")
         await interaction.followup.send("❌ Erro ao adicionar alvo Twitch. Alerta: Falha na operação.", ephemeral=True)
 
-
 @bot.tree.command(name="adicionar_youtube", description="Adiciona um canal do YouTube para monitoramento")
 @app_commands.describe(
     url_canal="URL do canal do YouTube",
@@ -225,55 +224,62 @@ async def adicionar_youtube(
     url_canal: str,
     usuario_discord: Optional[discord.Member] = None
 ):
-    try:
-        # Responder imediatamente para evitar timeout
+    """Correção do erro 10062 com tratamento adequado de tempo"""
+    
+    # 1. Responder IMEDIATAMENTE para evitar timeout
+    if not interaction.response.is_done():
         await interaction.response.defer(ephemeral=True)
-        
-        # Verificar se a API do YouTube está disponível
+    
+    try:
+        # 2. Verificar se a API está disponível
         if not bot.youtube_api:
             return await interaction.followup.send(
-                "❌ Serviço do YouTube não está disponível no momento.",
+                "❌ Serviço do YouTube não está disponível.",
                 ephemeral=True
             )
 
+        # 3. Processamento principal (pode ser demorado)
         youtube_id = await bot.youtube_api.get_channel_id_from_url(url_canal)
         if not youtube_id:
             return await interaction.followup.send(
-                "❌ Não foi possível encontrar o ID do canal do YouTube. Verifique a URL.",
+                "❌ ID do canal não encontrado. Verifique a URL.",
                 ephemeral=True
             )
 
         data = await get_cached_data(bot.drive_service)
         guild_id = str(interaction.guild.id)
         
-        if guild_id not in data.get("youtube_channels", {}):
-            data["youtube_channels"][guild_id] = {}
-        
-        if youtube_id in data["youtube_channels"][guild_id]:
+        if youtube_id in data.get("youtube_channels", {}).get(guild_id, {}):
             return await interaction.followup.send(
-                "⚠️ Este canal do YouTube já é um alvo! Alerta: Falha na operação.",
+                "⚠️ Canal já está sendo monitorado.",
                 ephemeral=True
             )
 
+        # 4. Atualizar dados
+        if guild_id not in data["youtube_channels"]:
+            data["youtube_channels"][guild_id] = {}
+            
         data["youtube_channels"][guild_id][youtube_id] = {
             "discord_user_id": str(usuario_discord.id) if usuario_discord else None
         }
         
         await set_cached_data(data, bot.drive_service)
         
+        # 5. Resposta final
         await interaction.followup.send(
-            f"✅ Canal do YouTube com ID `{youtube_id}` adicionado ao sistema. Missão concluída.",
+            f"✅ Canal `{youtube_id}` adicionado com sucesso.",
             ephemeral=True
         )
+
     except Exception as e:
-        logger.error(f"❌ Erro ao adicionar alvo YouTube: {e}. Alerta: Falha na operação.")
+        logger.error(f"Erro em adicionar_youtube: {type(e).__name__}: {e}")
         try:
             await interaction.followup.send(
-                "❌ Erro ao adicionar alvo YouTube. Alerta: Falha na operação.",
+                "❌ Erro ao processar solicitação.",
                 ephemeral=True
             )
         except:
-            pass  # Se já não puder responder, ignora
+            pass  # Falha silenciosa se não puder responder
 
 @bot.tree.command(name="remover_twitch", description="Remove um streamer da Twitch do monitoramento")
 @app_commands.describe(nome_twitch="Nome do streamer da Twitch")
