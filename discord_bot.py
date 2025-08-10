@@ -132,14 +132,21 @@ async def sync(ctx: commands.Context):
 # ========== COMANDOS DE APLICAÇÃO (SLASH) ========== #
 @bot.tree.command(name="status", description="Mostra o status do T-800")
 async def status(interaction: discord.Interaction):
-    """Mostra informações do sistema."""
+    # Defer a resposta para o Discord, indicando que a tarefa levará tempo.
+    await interaction.response.defer(ephemeral=True)
+
+    # Agora, você pode fazer as operações que podem demorar.
     uptime = datetime.now() - bot.start_time
-    await interaction.response.send_message(
-        f"**🤖 STATUS DO T-800**\n"
-        f"⏱ **Uptime:** `{str(uptime).split('.')[0]}`\n"
-        f"📡 **Servidores:** `{len(bot.guilds)}`\n"
-        f"👀 **Monitorando:** `Twitch: {len((await get_data())['monitored_users']['twitch'])} | YouTube: {len((await get_data())['monitored_users']['youtube'])}`",
-        ephemeral=True
+    data = await get_data()
+
+    # Depois de obter os dados, edite a mensagem original.
+    await interaction.edit_original_response(
+        content=(
+            f"**🤖 STATUS DO T-800**\n"
+            f"⏱ **Uptime:** `{str(uptime).split('.')[0]}`\n"
+            f"📡 **Servidores:** `{len(bot.guilds)}`\n"
+            f"👀 **Monitorando:** `Twitch: {len(data['monitored_users']['twitch'])} | YouTube: {len(data['monitored_users']['youtube'])}`"
+        )
     )
 
 @bot.tree.command(name="adicionar", description="Adiciona um streamer para monitoramento")
