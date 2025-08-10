@@ -222,7 +222,42 @@ async def adicionar_streamer(interaction: discord.Interaction, plataforma: str, 
         await interaction.edit_original_response(
             content=f"❌ Erro ao adicionar alvo: {e}. Alerta: Falha na operação."
         )
+ 
+@bot.tree.command(name="remover", description="Remove um alvo do monitoramento")
+@app_commands.describe(
+    plataforma="Plataforma (twitch/youtube)",
+    nome="Nome do streamer/canal a ser removido"
+)
+@app_commands.choices(plataforma=[
+    app_commands.Choice(name="Twitch", value="twitch"),
+    app_commands.Choice(name="YouTube", value="youtube")
+])
+async def remover_streamer(interaction: discord.Interaction, plataforma: str, nome: str):
+    """Remove um alvo da lista de monitoramento."""
+    try:
+        await interaction.response.defer(ephemeral=True)
+        data = await get_data()
+        plataforma = plataforma.lower()
         
+        if plataforma not in ["twitch", "youtube"]:
+            return await interaction.edit_original_response(content="❌ Plataforma inválida! Alerta: Falha na operação.")
+
+        if nome.lower() not in data["monitored_users"][plataforma]:
+            return await interaction.edit_original_response(
+                content=f"⚠️ **{nome}** não está na lista de alvos do {plataforma.capitalize()}! Alerta: Falha na operação."
+            )
+
+        del data["monitored_users"][plataforma][nome.lower()]
+        await save_data(data)
+
+        await interaction.edit_original_response(
+            content=f"✅ **{nome}** removido do sistema. Missão concluída."
+        )
+    except Exception as e:
+        await interaction.edit_original_response(
+            content=f"❌ Erro ao remover alvo: {e}. Alerta: Falha na operação."
+        )
+       
 @bot.tree.command(name="listar", description="Mostra a lista de alvos monitorados")
 async def listar_streamers(interaction: discord.Interaction):
     """Exibe a lista de usuários monitorados."""
