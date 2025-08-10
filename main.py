@@ -4,6 +4,7 @@ import threading
 import asyncio
 import logging
 import aiohttp
+import json  # Adicione esta linha
 from datetime import datetime
 from flask import Flask, jsonify
 from drive_service import GoogleDriveService
@@ -66,7 +67,7 @@ async def main_async():
 
             if not os.path.exists("streamers.json"):
                 with open("streamers.json", 'w') as f:
-                    json.dump({
+                    json.dump({  # Agora usando o módulo json importado
                         "streamers": {},
                         "youtube_channels": {},
                         "monitored_users": {
