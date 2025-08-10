@@ -10,6 +10,7 @@ class TwitchAPI:
         self.client_id = client_id
         self.client_secret = client_secret
         self.token = None
+        self.token_expires = 0
 
     async def _get_auth_token(self):
         try:
@@ -23,12 +24,15 @@ class TwitchAPI:
             async with self.session.post(url, params=params) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    self.token = data.get('access_token')
-                    logger.info("Token de autenticação Twitch obtido com sucesso")
+                    self.token = data['access_token']
+                    self.token_expires = data.get('expires_in', 3600)
+                    logger.info("Token de autenticação Twitch obtido")
                 else:
-                    logger.error(f"Falha ao obter token Twitch: {resp.status}")
+                    logger.error(f"Falha ao obter token: {resp.status}")
+                    raise Exception("Falha na autenticação Twitch")
         except Exception as e:
-            logger.error(f"FALHA NA AUTENTICAÇÃO: {str(e)}")
+            logger.error(f"ERRO DE AUTENTICAÇÃO: {str(e)}")
+            raise
 
     async def check_live_channels(self, channels: List[str]) -> Dict[str, bool]:
         try:
@@ -47,8 +51,13 @@ class TwitchAPI:
             ) as resp:
                 if resp.status == 200:
                     data = await resp.json()
-                    return {stream['user_login']: True for stream in data.get('data', [])}
+                    return {stream['user_login'].lower(): True for stream in data.get('data', [])}
+                elif resp.status == 401:
+                    await self._get_auth_token()
+                    return await self.check_live_channels(channels)
+                else:
+                    logger.error(f"Erro na API Twitch: {resp.status}")
+                    return {}
         except Exception as e:
             logger.error(f"FALHA NO MONITORAMENTO: {str(e)}")
-        
-        return {}
+            return {}
