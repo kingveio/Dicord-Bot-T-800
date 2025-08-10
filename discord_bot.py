@@ -181,12 +181,16 @@ async def status(interaction: discord.Interaction):
     )
 
 @bot.tree.command(name="adicionar", description="Adiciona um streamer para monitoramento")
-@app_commands.describe(plataforma="Plataforma (twitch/youtube)", nome="Nome do streamer/canal")
+@app_commands.describe(
+    plataforma="Plataforma (twitch/youtube)", 
+    nome="Nome do streamer/canal",
+    usuario="O usuário do Discord a ser vinculado"
+)
 @app_commands.choices(plataforma=[
     app_commands.Choice(name="Twitch", value="twitch"),
     app_commands.Choice(name="YouTube", value="youtube")
 ])
-async def adicionar_streamer(interaction: discord.Interaction, plataforma: str, nome: str):
+async def adicionar_streamer(interaction: discord.Interaction, plataforma: str, nome: str, usuario: discord.Member):
     """Adiciona um streamer à lista de monitoramento."""
     try:
         await interaction.response.defer(ephemeral=True)
@@ -202,14 +206,14 @@ async def adicionar_streamer(interaction: discord.Interaction, plataforma: str, 
             )
 
         data["monitored_users"][plataforma][nome.lower()] = {
-            "added_by": interaction.user.id,
+            "added_by": usuario.id,
             "added_at": datetime.now().isoformat(),
             "guild_id": interaction.guild.id
         }
         await save_data(bot.drive_service)
 
         await interaction.edit_original_response(
-            content=f"✅ **{nome}** adicionado ao sistema. Missão concluída."
+            content=f"✅ **{nome}** adicionado ao sistema e vinculado a {usuario.mention}. Missão concluída."
         )
     except Exception as e:
         await interaction.edit_original_response(
