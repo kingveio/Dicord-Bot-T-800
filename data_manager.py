@@ -66,20 +66,17 @@ async def load_data_from_drive_if_exists(drive_service: Optional['GoogleDriveSer
     global DATA_CACHE
     
     try:
-        # Tenta carregar do Google Drive
         if drive_service and hasattr(drive_service, 'download_file'):
             if await asyncio.to_thread(drive_service.download_file, DATA_FILE, DATA_FILE):
                 if await load_from_file(DATA_FILE):
                     logger.info("Dados carregados do Google Drive")
                     return
 
-        # Tenta carregar localmente
         if os.path.exists(DATA_FILE):
             if await load_from_file(DATA_FILE):
                 logger.info("Dados carregados localmente")
                 return
 
-        # Cria estrutura vazia se necessário
         async with DATA_LOCK:
             DATA_CACHE.update({
                 "streamers": {},
