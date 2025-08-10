@@ -12,6 +12,13 @@ class TwitchAPI:
         self.client_secret = client_secret
         self.access_token = None
         self.headers = None
+        self.session = aiohttp.ClientSession()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self.session.close()
 
     async def _get_access_token(self):
         """Obtém um novo token de acesso da API da Twitch."""
@@ -23,20 +30,19 @@ class TwitchAPI:
         }
         
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, data=params) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        self.access_token = data.get("access_token")
-                        self.headers = {
-                            "Client-ID": self.client_id,
-                            "Authorization": f"Bearer {self.access_token}"
-                        }
-                        logger.info("✅ Token da Twitch obtido/renovado com sucesso.")
-                        return True
-                    else:
-                        logger.error(f"❌ Erro ao obter token da Twitch: {response.status} - {await response.text()}")
-                        return False
+            async with self.session.post(url, data=params) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    self.access_token = data.get("access_token")
+                    self.headers = {
+                        "Client-ID": self.client_id,
+                        "Authorization": f"Bearer {self.access_token}"
+                    }
+                    logger.info("✅ Token da Twitch obtido/renovado com sucesso.")
+                    return True
+                else:
+                    logger.error(f"❌ Erro ao obter token da Twitch: {response.status} - {await response.text()}")
+                    return False
         except aiohttp.ClientError as e:
             logger.error(f"❌ Erro de conexão ao tentar obter token da Twitch: {e}")
             return False
@@ -51,36 +57,31 @@ class TwitchAPI:
 
         url = "https://api.twitch.tv/helix/streams"
         params = {"user_login": streamer_names}
-        live_status = {}
+        live_status = {name.lower(): False for name in streamer_names}
 
         try:
-            async with aiohttp.ClientSession(headers=self.headers) as session:
-                async with session.get(url, params=params) as response:
-                    if response.status == 401:
-                        # Token expirado, tenta renovar e refazer a requisição
-                        logger.warning("⚠️ Token da Twitch expirado. Tentando renovar...")
-                        if await self._get_access_token():
-                            async with aiohttp.ClientSession(headers=self.headers) as new_session:
-                                async with new_session.get(url, params=params) as new_response:
-                                    if new_response.status == 200:
-                                        data = await new_response.json()
-                                        streams = data.get("data", [])
-                                        live_streamer_logins = {stream['user_login'].lower() for stream in streams}
-                                        for name in streamer_names:
-                                            live_status[name.lower()] = name.lower() in live_streamer_logins
-                                    else:
-                                        logger.error(f"❌ Erro na API Twitch após renovar token: {new_response.status}")
-                                else:
-                                    logger.error("❌ Falha ao renovar o token da Twitch.")
-                    elif response.status == 200:
-                        data = await response.json()
-                        streams = data.get("data", [])
-                        live_streamer_logins = {stream['user_login'].lower() for stream in streams}
-                        for name in streamer_names:
-                            live_status[name.lower()] = name.lower() in live_streamer_logins
+            async with self.session.get(url, params=params, headers=self.headers) as response:
+                if response.status == 401:
+                    logger.warning("⚠️ Token da Twitch expirado. Tentando renovar...")
+                    if await self._get_access_token():
+                        async with self.session.get(url, params=params, headers=self.headers) as new_response:
+                            if new_response.status == 200:
+                                data = await new_response.json()
+                                live_streams = data.get("data", [])
+                                for stream in live_streams:
+                                    live_status[stream['user_login'].lower()] = True
+                            else:
+                                logger.error(f"❌ Erro na API Twitch após renovar token: {new_response.status}")
                     else:
-                        logger.error(f"❌ Erro na API Twitch: {response.status} - {await response.text()}")
-
+                        logger.error("❌ Falha ao renovar o token da Twitch. Verifique suas credenciais.")
+                elif response.status == 200:
+                    data = await response.json()
+                    live_streams = data.get("data", [])
+                    for stream in live_streams:
+                        live_status[stream['user_login'].lower()] = True
+                else:
+                    logger.error(f"❌ Erro na API Twitch: {response.status} - {await response.text()}")
+        
         except aiohttp.ClientError as e:
             logger.error(f"❌ Erro de conexão com a API da Twitch: {e}")
         
