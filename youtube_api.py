@@ -1,4 +1,5 @@
 import os
+import re
 import aiohttp
 import asyncio
 import logging
@@ -17,7 +18,7 @@ class YouTubeAPI:
     async def get_channel_id_from_url(self, url: str) -> Optional[str]:
         """Extrai o ID do canal a partir de uma URL ou handle."""
         
-        async def _search_channel_by_query(query: str, search_type: str = "forUsername") -> Optional[str]:
+        async def _search_channel_by_query(query: str, search_type: str) -> Optional[str]:
             params = {
                 'part': 'snippet',
                 'q': query,
@@ -26,13 +27,14 @@ class YouTubeAPI:
             }
             if search_type == "forHandle":
                  params['forHandle'] = query
-            else:
+            elif search_type == "forUsername":
                  params['forUsername'] = query
-
-            url = f'https://googleusercontent.com/youtube/v3/search'
+            
+            # URL da API corrigida
+            api_url = 'https://www.googleapis.com/youtube/v3/search'
             
             try:
-                async with self.session.get(url, params=params) as response:
+                async with self.session.get(api_url, params=params) as response:
                     response.raise_for_status()
                     data = await response.json()
                     if data.get('items'):
@@ -59,7 +61,8 @@ class YouTubeAPI:
 
     async def is_channel_live(self, channel_id: str) -> bool:
         """Verifica se um canal está ao vivo."""
-        url = f'https://googleusercontent.com/youtube/v3/search'
+        # URL da API corrigida
+        api_url = 'https://www.googleapis.com/youtube/v3/search'
         params = {
             'key': self.api_key,
             'channelId': channel_id,
@@ -68,7 +71,7 @@ class YouTubeAPI:
             'type': 'video'
         }
         try:
-            async with self.session.get(url, params=params) as response:
+            async with self.session.get(api_url, params=params) as response:
                 response.raise_for_status()
                 data = await response.json()
                 return len(data.get('items', [])) > 0
