@@ -34,6 +34,7 @@ class T800Bot(commands.Bot):
         self.synced = False
         self.twitch_api = None
         self.youtube_api = None
+        self.drive_service = None
 
 # Inicialização do Bot
 bot = T800Bot()
@@ -86,7 +87,7 @@ async def ensure_live_role(guild: discord.Guild) -> Optional[discord.Role]:
         return None
 
 # ========== TAREFA PERIÓDICA ========== #
-@tasks.loop(minutes=3)
+@tasks.loop(minutes=5)
 async def monitor_streams():
     """Verifica periodicamente os streamers monitorados."""
     if not bot.system_ready:
@@ -100,12 +101,13 @@ async def monitor_streams():
             return
             
         # Monitorar Twitch
-        if data["monitored_users"]["twitch"]:
-            streamers = list(data["monitored_users"]["twitch"].keys())
+        twitch_users = data["monitored_users"]["twitch"]
+        if twitch_users and bot.twitch_api:
+            streamers = list(twitch_users.keys())
             live_status = await bot.twitch_api.check_live_channels(streamers)
             
             for streamer_name, is_live in live_status.items():
-                user_info = data["monitored_users"]["twitch"].get(streamer_name.lower())
+                user_info = twitch_users.get(streamer_name.lower())
                 if not user_info: continue
 
                 guild = bot.get_guild(user_info.get("guild_id"))
@@ -125,11 +127,12 @@ async def monitor_streams():
                         logger.info(f"✅ Cargo 'AO VIVO' removido de {member.name} (Twitch). Missão concluída.")
         
         # Monitorar YouTube
-        if data["monitored_users"]["youtube"]:
-            youtube_channels = list(data["monitored_users"]["youtube"].keys())
+        youtube_users = data["monitored_users"]["youtube"]
+        if youtube_users and bot.youtube_api:
+            youtube_channels = list(youtube_users.keys())
             
             for channel_name in youtube_channels:
-                user_info = data["monitored_users"]["youtube"].get(channel_name.lower())
+                user_info = youtube_users.get(channel_name.lower())
                 if not user_info: continue
 
                 guild = bot.get_guild(user_info.get("guild_id"))
@@ -210,7 +213,7 @@ async def adicionar_streamer(interaction: discord.Interaction, plataforma: str, 
             "added_at": datetime.now().isoformat(),
             "guild_id": interaction.guild.id
         }
-        await save_data(bot.drive_service)
+        await save_data(data)
 
         await interaction.edit_original_response(
             content=f"✅ **{nome}** adicionado ao sistema e vinculado a {usuario.mention}. Missão concluída."
@@ -247,23 +250,20 @@ async def listar_streamers(interaction: discord.Interaction):
         )
 
     if twitch_output or youtube_output:
-        output += "--- Twitch ---\n" + "\n".join(twitch_output) + "\n"
-        output += "--- YouTube ---\n" + "\n".join(youtube_output)
+        if twitch_output:
+            output += "--- Twitch ---\n" + "\n".join(twitch_output) + "\n"
+        if youtube_output:
+            output += "--- YouTube ---\n" + "\n".join(youtube_output)
     else:
         output += "Nenhum alvo encontrado no sistema."
 
     await interaction.edit_original_response(content=output)
 
 # ========== INICIALIZAÇÃO ========== #
-async def setup():
-    """Configurações iniciais do bot."""
-    try:
-        data = await get_data()
-        if not data:
-            await save_data()
-    except Exception as e:
-        logger.error(f"❌ Falha ao carregar dados: {e}. Alerta: Falha na operação.")
-
 @bot.event
 async def setup_hook():
-    await setup()
+    """Configurações iniciais do bot."""
+    data = await get_data()
+    if not data:
+        # Se get_data retornar dados padrão, salva para criar o arquivo no Drive
+        await save_data(data)
