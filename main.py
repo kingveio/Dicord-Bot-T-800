@@ -46,7 +46,13 @@ if missing := [var for var in REQUIRED_ENV if var not in os.environ]:
     logger.critical(f"FALHA DE INICIALIZAÇÃO: Variáveis ausentes - {missing}")
     sys.exit(1)
 
+from flask import Flask, jsonify
+
 app = Flask(__name__)
+
+@app.route('/ping')
+def ping():
+    return jsonify({'status': 'online'})
 START_TIME = datetime.now()
 
 @app.route('/status')
