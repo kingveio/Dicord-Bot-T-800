@@ -4,13 +4,13 @@ import threading
 import asyncio
 import logging
 import aiohttp
-import json  # Adicione esta linha
+import json
 from datetime import datetime
 from flask import Flask, jsonify
 from drive_service import GoogleDriveService
 from twitch_api import TwitchAPI
 from youtube_api import YouTubeAPI
-from data_manager import load_data_from_drive_if_exists
+from data_manager import load_data_from_drive_if_exists, save_data, get_data
 from discord_bot import bot
 
 # Configuração T-800
@@ -51,9 +51,51 @@ def system_status():
         "mission": "monitorar_streams"
     })
 
+async def initialize_data():
+    """Inicializa o sistema de dados com fallbacks robustos"""
+    try:
+        drive_service = GoogleDriveService()
+        
+        # Verifica se o serviço do Drive está funcional
+        if not hasattr(drive_service, 'download_file'):
+            raise AttributeError("Serviço do Google Drive incompleto")
+        
+        await load_data_from_drive_if_exists(drive_service)
+        return drive_service
+        
+    except Exception as e:
+        logger.error(f"Falha ao inicializar Google Drive: {e}")
+        
+        # Fallback para arquivo local
+        if os.path.exists("streamers.json"):
+            try:
+                with open("streamers.json", 'r') as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        await save_data()
+                        logger.info("Dados carregados do arquivo local")
+            except Exception as e:
+                logger.error(f"Erro ao ler arquivo local: {e}")
+        
+        # Cria nova estrutura se necessário
+        if not os.path.exists("streamers.json"):
+            with open("streamers.json", 'w') as f:
+                json.dump({
+                    "streamers": {},
+                    "youtube_channels": {},
+                    "monitored_users": {
+                        "twitch": {},
+                        "youtube": {}
+                    }
+                }, f, indent=2)
+            logger.info("Novo arquivo de dados criado")
+        
+        return None
+
 async def main_async():
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
+            # Inicializa APIs
             bot.twitch_api = TwitchAPI(
                 session,
                 os.environ["TWITCH_CLIENT_ID"],
@@ -63,43 +105,17 @@ async def main_async():
                 session,
                 os.environ["YOUTUBE_API_KEY"]
             )
-            bot.drive_service = GoogleDriveService()
-
-            # Verificação mais robusta do arquivo de dados
-            if not os.path.exists("streamers.json"):
-                try:
-                    with open("streamers.json", 'w') as f:
-                        json.dump({
-                            "streamers": {},
-                            "youtube_channels": {},
-                            "monitored_users": {
-                                "twitch": {},
-                                "youtube": {}
-                            }
-                        }, f, indent=2)
-                    logger.info("Arquivo de dados local criado com estrutura inicial")
-                except Exception as e:
-                    logger.error(f"Erro ao criar arquivo de dados: {e}")
-                    raise
-
-            try:
-                await load_data_from_drive_if_exists(bot.drive_service)
-            except Exception as e:
-                logger.error(f"Falha ao carregar dados, usando estrutura vazia: {e}")
-                DATA_CACHE.update({
-                    "streamers": {},
-                    "youtube_channels": {},
-                    "monitored_users": {
-                        "twitch": {},
-                        "youtube": {}
-                    }
-                })
-                logger.info("Arquivo de dados local criado")
-
-            await load_data_from_drive_if_exists(bot.drive_service)
-
+            
+            # Inicializa sistema de dados
+            bot.drive_service = await initialize_data()
+            
+            # Inicia servidor web
             threading.Thread(
-                target=lambda: app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080))),
+                target=lambda: app.run(
+                    host='0.0.0.0',
+                    port=int(os.environ.get("PORT", 8080)),
+                    use_reloader=False
+                ),
                 daemon=True
             ).start()
 
@@ -117,3 +133,4 @@ if __name__ == '__main__':
         logger.info("Missão interrompida pelo usuário")
     except Exception as e:
         logger.error(f"ERRO: {str(e)}")
+        sys.exit(1)
