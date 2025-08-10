@@ -13,6 +13,20 @@ from youtube_api import YouTubeAPI
 from data_manager import load_data_from_drive_if_exists, save_data, get_data
 from discord_bot import bot
 
+# Configuração do logger antes de qualquer uso
+logger = logging.getLogger("T-800")
+
+def configure_logging():
+    """Configura o sistema de logging"""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | T-800 | %(message)s",
+        handlers=[
+            logging.FileHandler("t800_system.log"),
+            logging.StreamHandler()
+        ]
+    )
+
 # Configuração T-800
 os.environ.setdefault('DISABLE_VOICE', 'true')
 print("╔════════════════════════════════════════════╗")
@@ -20,15 +34,7 @@ print("║        SISTEMA T-800 INICIALIZANDO         ║")
 print("║    Versão 2.0 - Monitoramento Ativo        ║")
 print("╚════════════════════════════════════════════╝")
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | T-800 | %(message)s",
-    handlers=[
-        logging.FileHandler("t800_system.log"),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger("T-800")
+configure_logging()
 
 REQUIRED_ENV = [
     "DISCORD_TOKEN", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET",
