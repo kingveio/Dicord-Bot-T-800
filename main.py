@@ -2,6 +2,7 @@ import os
 import logging
 from discord_bot import bot as discord_bot
 from twitch_api import TwitchAPI
+from kick_api import KickAPI
 from drive_service import GoogleDriveService
 
 # Configuração do logger
@@ -16,7 +17,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 async def initialize_apis(bot):
-    """Inicializa as APIs da Twitch e Google Drive."""
+    """Inicializa as APIs da Twitch, Kick e Google Drive."""
     try:
         # Inicialização da Twitch API
         twitch_client_id = os.getenv("TWITCH_CLIENT_ID")
@@ -30,6 +31,10 @@ async def initialize_apis(bot):
                 logger.error("❌ Falha ao obter token da Twitch.")
         else:
             logger.error("❌ TWITCH_CLIENT_ID ou TWITCH_CLIENT_SECRET não definidos.")
+            
+        # Inicialização da Kick API
+        bot.kick_api = KickAPI()
+        logger.info("✅ Kick API inicializada com sucesso.")
 
         # Inicialização do Google Drive API
         bot.drive_service = GoogleDriveService()
