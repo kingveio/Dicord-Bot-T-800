@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
+intents.voice_states = False
 
 class StreamBot(commands.Bot):
     def __init__(self):
