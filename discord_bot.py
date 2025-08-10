@@ -18,7 +18,8 @@ class T800Bot(commands.Bot):
             activity=discord.Activity(
                 type=discord.ActivityType.watching,
                 name="humanos streamando"
-            )
+            ),
+            owner_id=659611103399116800  # Adicione esta linha
         )
         self.start_time = datetime.now()
         self.live_role = "AO VIVO"
@@ -71,7 +72,7 @@ async def monitor_streams():
     if not bot.system_ready:
         return
     
-    logging.info("INICIANDO VARREdura DE ALVOS...")
+    logging.info("INICIANDO VARREDURA DE ALVOS...")
     # Implementação do monitoramento aqui
 
 @bot.tree.command(name="status", description="Relatório do sistema T-800")
