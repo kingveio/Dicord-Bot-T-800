@@ -1,110 +1,112 @@
 import os
 import io
-import logging
-from typing import Optional, Dict, Any
-from google.oauth2 import service_account
+import json
+from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 from googleapiclient.errors import HttpError
+from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
+import logging
+from typing import Optional
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("T-800")
 
 class GoogleDriveService:
     def __init__(self):
-        self.SCOPES = ['https://www.googleapis.com/auth/drive']
-        self.service_account_info = self._get_service_account_info()
         self.service = self._authenticate()
-        self.timeout = 30
-
-    def _get_service_account_info(self) -> Dict[str, Any]:
-        private_key = os.environ["DRIVE_PRIVATE_KEY"]
-        
-        if '\\n' in private_key:
-            private_key = private_key.replace('\\n', '\n')
-        elif not private_key.startswith('-----BEGIN PRIVATE KEY-----'):
-            private_key = '-----BEGIN PRIVATE KEY-----\n' + private_key + '\n-----END PRIVATE KEY-----'
-        
-        return {
-            "type": "service_account",
-            "project_id": os.environ.get("DRIVE_PROJECT_ID", "bot-t-800"),
-            "private_key_id": os.environ["DRIVE_PRIVATE_KEY_ID"],
-            "private_key": private_key,
-            "client_email": os.environ.get("DRIVE_CLIENT_EMAIL", "discord-bot-t-800@bot-t-800.iam.gserviceaccount.com"),
-            "client_id": os.environ["DRIVE_CLIENT_ID"],
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{os.environ.get('DRIVE_CLIENT_EMAIL', 'discord-bot-t-800@bot-t-800.iam.gserviceaccount.com')}"
-        }
+        self.file_name = "data.json"
+        self.file_id = self._get_file_id()
 
     def _authenticate(self):
-        creds = service_account.Credentials.from_service_account_info(
-            self.service_account_info, scopes=self.SCOPES
-        )
-        return build('drive', 'v3', credentials=creds, cache_discovery=False, static_discovery=False)
-
-    def find_file(self, file_name: str) -> Optional[Dict[str, Any]]:
+        """Autentica-se com as credenciais do Google Drive."""
+        creds = None
         try:
-            query = f"name='{file_name}' and trashed=false and '{os.environ['DRIVE_FOLDER_ID']}' in parents"
-            results = self.service.files().list(
-                q=query,
-                spaces='drive',
-                fields='files(id, name)',
-                pageSize=1
-            ).execute()
-            files = results.get('files', [])
-            return files[0] if files else None
-        except HttpError as e:
-            logger.error(f"Erro ao buscar arquivo: {e}")
+            creds_json = os.getenv("GOOGLE_DRIVE_CREDENTIALS")
+            if not creds_json:
+                logger.error("❌ Variável de ambiente GOOGLE_DRIVE_CREDENTIALS não encontrada.")
+                return None
+            creds_info = json.loads(creds_json)
+            creds = Credentials.from_authorized_user_info(creds_info)
+            service = build("drive", "v3", credentials=creds)
+            logger.info("✅ Autenticação com Google Drive bem-sucedida.")
+            return service
+        except Exception as e:
+            logger.error(f"❌ Erro na autenticação do Google Drive: {e}")
             return None
 
-    def download_file(self, file_name: str, local_path: str) -> bool:
+    def _get_file_id(self) -> Optional[str]:
+        """Busca o ID do arquivo 'data.json' no Google Drive."""
+        if not self.service:
+            return None
+        
         try:
-            file_info = self.find_file(file_name)
-            if not file_info:
-                logger.warning(f"Arquivo {file_name} não encontrado no Drive")
-                return False
+            results = self.service.files().list(
+                q=f"name='{self.file_name}' and trashed=false",
+                spaces="drive",
+                fields="files(id, name)"
+            ).execute()
+            items = results.get("files", [])
+            if not items:
+                logger.warning(f"⚠️ Arquivo '{self.file_name}' não encontrado. Ele será criado na inicialização.")
+                return None
+            return items[0]["id"]
+        except HttpError as error:
+            logger.error(f"❌ Ocorreu um erro ao buscar o arquivo: {error}")
+            return None
 
-            request = self.service.files().get_media(fileId=file_info['id'])
-            fh = io.FileIO(local_path, 'wb')
-            downloader = MediaIoBaseDownload(fh, request)
-            
-            done = False
-            while not done:
-                _, done = downloader.next_chunk()
-            
-            logger.info(f"Arquivo {file_name} baixado com sucesso")
-            return True
-        except HttpError as e:
-            logger.error(f"Erro HTTP ao baixar: {e}")
-            return False
-        except Exception as e:
-            logger.error(f"Erro ao baixar arquivo: {e}")
-            return False
-
-    def upload_file(self, file_path: str, file_name: str) -> bool:
+    def create_or_update_file(self, content: str) -> Optional[str]:
+        """Cria ou atualiza o arquivo 'data.json' no Google Drive."""
+        if not self.service:
+            return None
+        
         try:
-            file_metadata = {
-                'name': file_name,
-                'parents': [os.environ['DRIVE_FOLDER_ID']]
-            }
-            media = MediaFileUpload(file_path, resumable=True)
+            media = MediaIoBaseUpload(io.BytesIO(content.encode()), mimetype="application/json")
             
-            existing = self.find_file(file_name)
-            if existing:
-                self.service.files().update(
-                    fileId=existing['id'],
+            if self.file_id:
+                # Atualiza o arquivo existente
+                updated_file = self.service.files().update(
+                    fileId=self.file_id,
                     media_body=media
                 ).execute()
+                logger.info(f"✅ Arquivo '{self.file_name}' atualizado com sucesso. ID: {updated_file.get('id')}")
+                return updated_file.get("id")
             else:
-                self.service.files().create(
+                # Cria um novo arquivo
+                file_metadata = {"name": self.file_name}
+                new_file = self.service.files().create(
                     body=file_metadata,
                     media_body=media,
-                    fields='id'
+                    fields="id"
                 ).execute()
+                self.file_id = new_file.get("id")
+                logger.info(f"✅ Arquivo '{self.file_name}' criado com sucesso. ID: {self.file_id}")
+                return self.file_id
+        except HttpError as error:
+            logger.error(f"❌ Ocorreu um erro ao criar/atualizar o arquivo: {error}")
+            return None
+
+    def download_file(self) -> Optional[dict]:
+        """Faz o download do arquivo 'data.json' do Google Drive."""
+        if not self.service or not self.file_id:
+            logger.warning("⚠️ Não foi possível fazer o download. Serviço ou ID do arquivo ausente.")
+            return None
+        
+        try:
+            file_content = self.service.files().get(fileId=self.file_id).execute()
+            logger.info(f"✅ Iniciando download do arquivo '{self.file_name}'...")
+            file_bytes = io.BytesIO()
+            downloader = MediaIoBaseDownload(file_bytes, file_content)
             
-            logger.info(f"Arquivo {file_name} enviado com sucesso")
-            return True
-        except Exception as e:
-            logger.error(f"Erro ao enviar arquivo: {e}")
-            return False
+            done = False
+            while done is False:
+                status, done = downloader.next_chunk()
+                
+            file_bytes.seek(0)
+            data = json.load(file_bytes)
+            logger.info("✅ Download do arquivo concluído e dados carregados.")
+            return data
+        except HttpError as error:
+            logger.error(f"❌ Ocorreu um erro ao baixar o arquivo: {error}")
+            return None
+        except json.JSONDecodeError:
+            logger.error("❌ Erro ao decodificar o arquivo JSON. O arquivo pode estar corrompido.")
+            return None
