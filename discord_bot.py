@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
-intents.voice_states = False  # **CORREÇÃO:** Desabilita a voz para remover o aviso PyNaCl
+intents.voice_states = False  # Desabilita a voz para remover o aviso PyNaCl
 
 class StreamBot(commands.Bot):
     def __init__(self):
@@ -102,7 +102,6 @@ async def monitor_streams():
     """Verifica periodicamente os streamers monitorados."""
     logger.info("🔍 Análise de alvos iniciada...")
     try:
-        # **CORREÇÃO:** Adiciona o drive_service como argumento
         data = await get_cached_data(bot.drive_service)
         if not data:
             logger.error("⚠️ Dados não carregados corretamente! Alerta: Falha na operação.")
@@ -147,11 +146,21 @@ async def monitor_streams():
                 if not live_role: continue
 
                 for youtube_id, config in channels_map.items():
-                    discord_id = config.get("discord_user_id")
-                    if not discord_id: continue
+                    discord_id_str = config.get("discord_user_id")
+                    if not discord_id_str: 
+                        logger.warning(f"❌ Valor de discord_user_id inválido ou ausente para o canal {youtube_id}.")
+                        continue
 
-                    member = guild.get_member(int(discord_id))
-                    if not member: continue
+                    try:
+                        discord_id = int(discord_id_str)
+                    except (ValueError, TypeError):
+                        logger.error(f"❌ Valor inválido para discord_user_id: '{discord_id_str}' no canal {youtube_id}")
+                        continue
+                    
+                    member = guild.get_member(discord_id)
+                    if not member:
+                        logger.warning(f"❌ Membro com ID {discord_id} vinculado ao canal do YouTube não encontrado.")
+                        continue
                     
                     is_live = await bot.youtube_api.is_channel_live(youtube_id)
                     has_role = live_role in member.roles
@@ -165,7 +174,6 @@ async def monitor_streams():
 
     except Exception as e:
         logger.error(f"❌ Falha no monitoramento: {e}. Alerta: Falha na operação.")
-
 
 # ========== COMANDOS DE APLICAÇÃO (SLASH) ========== #
 
@@ -182,7 +190,6 @@ async def adicionar_twitch(
 ):
     await interaction.response.defer(ephemeral=True)
     try:
-        # **CORREÇÃO:** Adiciona o drive_service como argumento
         data = await get_cached_data(bot.drive_service)
         guild_id = str(interaction.guild.id)
         
@@ -193,7 +200,6 @@ async def adicionar_twitch(
             return await interaction.followup.send(f"⚠️ {nome_twitch} já é um alvo na Twitch! Alerta: Falha na operação.", ephemeral=True)
 
         data["streamers"][guild_id][nome_twitch.lower()] = str(usuario_discord.id)
-        # **CORREÇÃO:** Adiciona o drive_service como argumento
         await set_cached_data(data, bot.drive_service)
 
         await interaction.followup.send(
@@ -222,7 +228,6 @@ async def adicionar_youtube(
         if not youtube_id:
             return await interaction.followup.send("❌ Não foi possível encontrar o ID do canal do YouTube. Verifique a URL.", ephemeral=True)
 
-        # **CORREÇÃO:** Adiciona o drive_service como argumento
         data = await get_cached_data(bot.drive_service)
         guild_id = str(interaction.guild.id)
         
@@ -235,7 +240,6 @@ async def adicionar_youtube(
         data["youtube_channels"][guild_id][youtube_id] = {
             "discord_user_id": str(usuario_discord.id) if usuario_discord else None
         }
-        # **CORREÇÃO:** Adiciona o drive_service como argumento
         await set_cached_data(data, bot.drive_service)
         
         await interaction.followup.send(
@@ -253,7 +257,6 @@ async def adicionar_youtube(
 async def remover_twitch(interaction: discord.Interaction, nome_twitch: str):
     await interaction.response.defer(ephemeral=True)
     try:
-        # **CORREÇÃO:** Adiciona o drive_service como argumento
         data = await get_cached_data(bot.drive_service)
         guild_id = str(interaction.guild.id)
 
@@ -264,7 +267,6 @@ async def remover_twitch(interaction: discord.Interaction, nome_twitch: str):
             )
 
         discord_id = data["streamers"][guild_id].pop(nome_twitch.lower())
-        # **CORREÇÃO:** Adiciona o drive_service como argumento
         await set_cached_data(data, bot.drive_service)
 
         member = interaction.guild.get_member(int(discord_id))
@@ -292,13 +294,11 @@ async def remover_youtube(interaction: discord.Interaction, url_canal: str):
         if not youtube_id:
             youtube_id = url_canal # Tenta o próprio input como ID se a conversão falhar
 
-        # **CORREÇÃO:** Adiciona o drive_service como argumento
         data = await get_cached_data(bot.drive_service)
         guild_id = str(interaction.guild.id)
         
         if youtube_id in data.get("youtube_channels", {}).get(guild_id, {}):
             del data["youtube_channels"][guild_id][youtube_id]
-            # **CORREÇÃO:** Adiciona o drive_service como argumento
             await set_cached_data(data, bot.drive_service)
             await interaction.followup.send(
                 f"✅ Canal do YouTube removido do sistema. Missão concluída.",
@@ -317,7 +317,6 @@ async def remover_youtube(interaction: discord.Interaction, url_canal: str):
 @bot.tree.command(name="listar_alvos", description="Mostra a lista de alvos monitorados")
 async def listar_alvos(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
-    # **CORREÇÃO:** Adiciona o drive_service como argumento
     data = await get_cached_data(bot.drive_service)
     
     output = "🤖 **RELATÓRIO DE ALVOS**\n\n"
@@ -356,7 +355,6 @@ async def listar_alvos(interaction: discord.Interaction):
 async def status(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     uptime = datetime.now() - bot.start_time
-    # **CORREÇÃO:** Adiciona o drive_service como argumento
     data = await get_cached_data(bot.drive_service)
     
     twitch_count = sum(len(g) for g in data.get("streamers", {}).values())
