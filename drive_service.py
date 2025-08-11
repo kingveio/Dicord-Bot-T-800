@@ -1,110 +1,98 @@
 import os
 import io
-import logging
-from typing import Optional, Dict, Any
-from google.oauth2 import service_account
+import asyncio
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
-from googleapiclient.errors import HttpError
+from google.oauth2.service_account import Credentials
+from google.auth.exceptions import DefaultCredentialsError
+import logging
 
 logger = logging.getLogger(__name__)
 
-class GoogleDriveService:
-    def __init__(self):
-        self.SCOPES = ['https://www.googleapis.com/auth/drive']
-        self.service_account_info = self._get_service_account_info()
-        self.service = self._authenticate()
-        self.timeout = 30
+class DriveService:
+    SCOPES = ['https://www.googleapis.com/auth/drive.file']
+    SERVICE_ACCOUNT_FILE = 'service_account.json'
 
-    def _get_service_account_info(self) -> Dict[str, Any]:
-        private_key = os.environ["DRIVE_PRIVATE_KEY"]
-        
-        if '\\n' in private_key:
-            private_key = private_key.replace('\\n', '\n')
-        elif not private_key.startswith('-----BEGIN PRIVATE KEY-----'):
-            private_key = '-----BEGIN PRIVATE KEY-----\n' + private_key + '\n-----END PRIVATE KEY-----'
-        
-        return {
-            "type": "service_account",
-            "project_id": os.environ.get("DRIVE_PROJECT_ID", "bot-t-800"),
-            "private_key_id": os.environ["DRIVE_PRIVATE_KEY_ID"],
-            "private_key": private_key,
-            "client_email": os.environ.get("DRIVE_CLIENT_EMAIL", "discord-bot-t-800@bot-t-800.iam.gserviceaccount.com"),
-            "client_id": os.environ["DRIVE_CLIENT_ID"],
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-            "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{os.environ.get('DRIVE_CLIENT_EMAIL', 'discord-bot-t-800@bot-t-800.iam.gserviceaccount.com')}"
-        }
+    def __init__(self):
+        self.creds = None
+        self.service = None
+        self._authenticate()
 
     def _authenticate(self):
-        creds = service_account.Credentials.from_service_account_info(
-            self.service_account_info, scopes=self.SCOPES
-        )
-        return build('drive', 'v3', credentials=creds, cache_discovery=False, static_discovery=False)
+        if os.path.exists(self.SERVICE_ACCOUNT_FILE):
+            try:
+                self.creds = Credentials.from_service_account_file(
+                    self.SERVICE_ACCOUNT_FILE, scopes=self.SCOPES
+                )
+                self.service = build('drive', 'v3', credentials=self.creds)
+                logger.info("✅ Autenticação com o Google Drive bem-sucedida.")
+            except DefaultCredentialsError as e:
+                logger.error(f"❌ Erro de autenticação: {e}")
+        else:
+            logger.warning("⚠️ Arquivo de conta de serviço não encontrado. O Google Drive não será utilizado.")
 
-    def find_file(self, file_name: str) -> Optional[Dict[str, Any]]:
+    def is_authenticated(self):
+        return self.service is not None
+
+    async def _execute_async(self, func, *args, **kwargs):
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, func, *args, **kwargs)
+
+    async def find_file(self, file_name):
+        if not self.is_authenticated(): return None
         try:
-            query = f"name='{file_name}' and trashed=false and '{os.environ['DRIVE_FOLDER_ID']}' in parents"
-            results = self.service.files().list(
-                q=query,
-                spaces='drive',
-                fields='files(id, name)',
-                pageSize=1
-            ).execute()
-            files = results.get('files', [])
-            return files[0] if files else None
-        except HttpError as e:
-            logger.error(f"Erro ao buscar arquivo: {e}")
+            results = await self._execute_async(
+                self.service.files().list(
+                    q=f"name='{file_name}' and trashed=false",
+                    spaces='drive',
+                    fields='files(id)'
+                ).execute
+            )
+            items = results.get('files', [])
+            return items[0]['id'] if items else None
+        except Exception as e:
+            logger.error(f"❌ Erro ao buscar arquivo '{file_name}': {e}")
             return None
 
-    def download_file(self, file_name: str, local_path: str) -> bool:
+    async def upload_file(self, file_path, mime_type):
+        if not self.is_authenticated(): return
         try:
-            file_info = self.find_file(file_name)
-            if not file_info:
-                logger.warning(f"Arquivo {file_name} não encontrado no Drive")
-                return False
+            file_metadata = {'name': os.path.basename(file_path)}
+            media = MediaFileUpload(file_path, mimetype=mime_type, resumable=True)
+            file = await self._execute_async(
+                self.service.files().create(
+                    body=file_metadata, media_body=media, fields='id'
+                ).execute
+            )
+            logger.info(f"✅ Arquivo '{file_path}' enviado. ID: {file.get('id')}")
+        except Exception as e:
+            logger.error(f"❌ Erro ao enviar arquivo '{file_path}': {e}")
 
-            request = self.service.files().get_media(fileId=file_info['id'])
-            fh = io.FileIO(local_path, 'wb')
-            downloader = MediaIoBaseDownload(fh, request)
-            
+    async def update_file(self, file_id, new_file_path):
+        if not self.is_authenticated(): return
+        try:
+            media = MediaFileUpload(new_file_path, resumable=True)
+            await self._execute_async(
+                self.service.files().update(
+                    fileId=file_id,
+                    media_body=media
+                ).execute
+            )
+            logger.info(f"✅ Arquivo ID '{file_id}' atualizado com '{new_file_path}'.")
+        except Exception as e:
+            logger.error(f"❌ Erro ao atualizar arquivo ID '{file_id}': {e}")
+
+    async def download_file(self, file_id):
+        if not self.is_authenticated(): return None
+        try:
+            request = self.service.files().get_media(fileId=file_id)
+            file_stream = io.BytesIO()
+            downloader = MediaIoBaseDownload(file_stream, request)
             done = False
             while not done:
-                _, done = downloader.next_chunk()
-            
-            logger.info(f"Arquivo {file_name} baixado com sucesso")
-            return True
-        except HttpError as e:
-            logger.error(f"Erro HTTP ao baixar: {e}")
-            return False
+                status, done = await self._execute_async(downloader.next_chunk)
+            file_stream.seek(0)
+            return file_stream.read().decode('utf-8')
         except Exception as e:
-            logger.error(f"Erro ao baixar arquivo: {e}")
-            return False
-
-    def upload_file(self, file_path: str, file_name: str) -> bool:
-        try:
-            file_metadata = {
-                'name': file_name,
-                'parents': [os.environ['DRIVE_FOLDER_ID']]
-            }
-            media = MediaFileUpload(file_path, resumable=True)
-            
-            existing = self.find_file(file_name)
-            if existing:
-                self.service.files().update(
-                    fileId=existing['id'],
-                    media_body=media
-                ).execute()
-            else:
-                self.service.files().create(
-                    body=file_metadata,
-                    media_body=media,
-                    fields='id'
-                ).execute()
-            
-            logger.info(f"Arquivo {file_name} enviado com sucesso")
-            return True
-        except Exception as e:
-            logger.error(f"Erro ao enviar arquivo: {e}")
-            return False
+            logger.error(f"❌ Erro ao baixar arquivo ID '{file_id}': {e}")
+            return None
