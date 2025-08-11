@@ -36,12 +36,19 @@ class T800Bot(commands.Bot):
         """Evento quando o bot está pronto para uso."""
         if not self.synced:
             try:
-                # O problema pode estar aqui, se o bot não sincronizar os comandos.
-                await self.tree.sync()
-                for guild in self.guilds:
+                # Otimiza a sincronização de comandos para uma guilda específica para evitar problemas de cache.
+                # Use o ID do seu servidor.
+                guild_id = int(os.environ.get("GUILD_ID", 0))
+                if guild_id:
+                    guild = discord.Object(id=guild_id)
                     await self.tree.sync(guild=guild)
-                self.synced = True
-                logger.info("✅ Missão: Comandos sincronizados com sucesso!")
+                    self.synced = True
+                    logger.info("✅ Missão: Comandos sincronizados com sucesso na guilda específica!")
+                else:
+                    await self.tree.sync()
+                    self.synced = True
+                    logger.info("✅ Missão: Comandos sincronizados globalmente (sem ID da guilda).")
+
             except Exception as e:
                 logger.error(f"❌ Falha ao sincronizar comandos: {e}")
 
