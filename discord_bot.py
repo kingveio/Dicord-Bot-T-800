@@ -66,6 +66,47 @@ async def on_ready():
     monitor_streams.start()
     logger.info("🔍 Monitoramento de streams iniciado...")
     
+ @bot.tree.command(name="status", description="Mostra o status do bot e das APIs")
+async def status(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+
+    uptime = datetime.now() - bot.start_time
+    data = await get_cached_data(bot.drive_service) or {}
+    streamers_data = data.get("streamers", {})
+
+    twitch_count = 0
+    kick_count = 0
+
+    if isinstance(streamers_data, dict):
+        for guild_streamers in streamers_data.values():
+            if isinstance(guild_streamers, dict):
+                for user_config in guild_streamers.values():
+                    if isinstance(user_config, dict):
+                        if 'twitch_username' in user_config:
+                            twitch_count += 1
+                        if 'kick_username' in user_config:
+                            kick_count += 1
+
+    # Estado das APIs
+    twitch_status = "✅ OK" if bot.twitch_api and bot.twitch_api.oauth_token else "❌ OFF"
+    kick_status = "✅ OK" if bot.kick_api else "❌ OFF"
+    drive_status = "✅ OK" if bot.drive_service and bot.drive_service.service else "❌ OFF"
+
+    status_msg = (
+        f"**📊 STATUS DO BOT**\n"
+        f"⏱ **Tempo de atividade:** {uptime.days}d {uptime.seconds // 3600}h {(uptime.seconds // 60) % 60}m\n"
+        f"🌐 **Servidores conectados:** {len(bot.guilds)}\n"
+        f"🎯 **Alvos monitorados:**\n"
+        f"   - Twitch: {twitch_count}\n"
+        f"   - Kick: {kick_count}\n\n"
+        f"**🔌 Status das APIs:**\n"
+        f"   - Twitch API: {twitch_status}\n"
+        f"   - Kick API: {kick_status}\n"
+        f"   - Google Drive API: {drive_status}\n"
+    )
+
+    await interaction.followup.send(content=status_msg, ephemeral=True)
+   
 @bot.event
 async def on_disconnect():
     logger.warning("Bot desconectado do Discord.")
