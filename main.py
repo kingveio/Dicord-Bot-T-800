@@ -55,11 +55,16 @@ def home():
     uptime = datetime.now() - bot.start_time
     hours, remainder = divmod(uptime.total_seconds(), 3600)
     minutes, seconds = divmod(remainder, 60)
+    
+    # Adiciona a verificação de bot.user
+    bot_name = bot.user.name if bot.user else "Bot não conectado"
+    bot_id = str(bot.user.id) if bot.user else "N/A"
+    
     return jsonify({
         "status": "online",
-        "bot_name": bot.user.name,
+        "bot_name": bot_name,
         "uptime": f"{int(hours)}h {int(minutes)}m {int(seconds)}s",
-        "discord_id": str(bot.user.id)
+        "discord_id": bot_id
     })
 
 async def initialize_data():
