@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 import logging
-from typing import Dict, Any
+from datetime import datetime
 
 logger = logging.getLogger("T-800")
 
@@ -34,7 +34,6 @@ class YouTubeMonitor(commands.Cog):
 
             channels = list(youtube_monitored_users.keys())
             
-            # Chama a sua nova API do YouTube
             live_status = await self.bot.youtube_api.get_channel_live_status(channels)
 
             for channel_name, is_live in live_status.items():
@@ -87,7 +86,7 @@ class YouTubeMonitor(commands.Cog):
                 "guild_id": interaction.guild.id
             }
             data["monitored_users"]["youtube"] = youtube_monitored_users
-            await self.bot.save_data(self.bot.drive_service)
+            await self.bot.save_data()
             await interaction.edit_original_response(
                 content=f"✅ **{nome}** (YouTube) adicionado ao sistema e vinculado a {usuario.mention}. Missão concluída."
             )
@@ -115,7 +114,7 @@ class YouTubeMonitor(commands.Cog):
 
             del youtube_monitored_users[nome.lower()]
             data["monitored_users"]["youtube"] = youtube_monitored_users
-            await self.bot.save_data(self.bot.drive_service)
+            await self.bot.save_data()
 
             await interaction.edit_original_response(
                 content=f"✅ **{nome}** (YouTube) removido do sistema. Missão concluída."
