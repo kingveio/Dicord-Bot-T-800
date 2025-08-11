@@ -50,22 +50,6 @@ def check_env():
             sys.exit(1)
     logger.info("✅ Variáveis de ambiente verificadas com sucesso.")
 
-async def initialize_data(drive_service: Optional[GoogleDriveService]) -> None:
-    """Inicializa a estrutura de dados, carregando do Drive ou criando uma nova."""
-    try:
-        await load_data(drive_service)
-        logger.info("✅ Dados carregados ou inicializados com sucesso.")
-    except Exception as e:
-        logger.critical(f"❌ Falha crítica ao carregar/inicializar dados: {e}")
-        sys.exit(1)
-
-# Inicialização do servidor Flask
-app = Flask(__name__)
-
-@app.route('/ping')
-def ping():
-    return jsonify({"status": "online", "bot_ready": bot.system_ready})
-
 async def main_async():
     try:
         # Verifica variáveis de ambiente
@@ -85,7 +69,7 @@ async def main_async():
             
             # Inicializa Drive Service e dados
             bot.drive_service = GoogleDriveService()
-            await initialize_data(bot.drive_service)
+            await load_data(bot.drive_service)
             
             # Inicia servidor web em um thread separado
             threading.Thread(
