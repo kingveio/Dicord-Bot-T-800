@@ -47,5 +47,7 @@ async def initialize_apis(bot):
         logger.error(f"❌ Falha ao inicializar as APIs: {e}")
 
 if __name__ == "__main__":
-    discord_bot.setup_hook = lambda: initialize_apis(discord_bot)
+    async def setup_hook():
+        await initialize_apis(discord_bot)
+    discord_bot.setup_hook = setup_hook
     discord_bot.run(os.getenv("DISCORD_TOKEN"))
