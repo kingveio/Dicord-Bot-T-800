@@ -5,7 +5,3 @@ google-auth-httplib2==0.1.1
 google-auth-oauthlib==1.1.0
 flask==3.0.0
 aiofiles==23.2.1
-PyNaCl==1.5.0
-beautifulsoup4
-lxml
-httpx
