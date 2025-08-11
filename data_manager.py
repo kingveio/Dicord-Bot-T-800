@@ -31,7 +31,7 @@ DATA_LOCK = asyncio.Lock()
 DATA_FILE = "streamers.json"
 
 def validate_data_structure(data: Dict[str, Any]) -> bool:
-    """Valida a estrutura básica dos dados"""
+    """Valida a estrutura básica dos dados."""
     try:
         required_keys = ["streamers", "youtube_channels", "monitored_users"]
         return all(k in data for k in required_keys)
@@ -39,7 +39,8 @@ def validate_data_structure(data: Dict[str, Any]) -> bool:
         return False
 
 async def load_from_file(file_path: str) -> bool:
-    """Carrega dados de um arquivo local"""
+    """Carrega dados de um arquivo local."""
+    global DATA_CACHE
     try:
         if USE_AIOFILES:
             async with aiofiles.open(file_path, 'r') as f:
@@ -48,23 +49,28 @@ async def load_from_file(file_path: str) -> bool:
             with open(file_path, 'r') as f:
                 content = f.read()
         
-        if not content.strip():
-            logger.warning(f"Arquivo {file_path} vazio")
+        if not content:
+            logger.warning("Arquivo de dados está vazio. Criando nova estrutura.")
             return False
-            
+
         data = json.loads(content)
-        return validate_data_structure(data)
-    except json.JSONDecodeError as e:
-        logger.error(f"JSON inválido em {file_path}: {e}")
+        if not validate_data_structure(data):
+            logger.warning("Estrutura do arquivo de dados inválida. Criando nova estrutura.")
+            return False
+
+        async with DATA_LOCK:
+            DATA_CACHE.update(data)
+        return True
+
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        logger.warning(f"Arquivo de dados não encontrado ou corrompido: {e}")
         return False
     except Exception as e:
-        logger.error(f"Erro ao carregar {file_path}: {e}")
+        logger.error(f"Erro inesperado ao carregar dados do arquivo: {e}")
         return False
 
-async def load_data_from_drive_if_exists(drive_service: Optional['GoogleDriveService'] = None) -> None:
-    """Carrega dados do Drive ou arquivo local"""
-    global DATA_CACHE
-    
+async def load_data(drive_service: Optional['GoogleDriveService'] = None) -> None:
+    """Carrega dados do Google Drive ou de um arquivo local."""
     try:
         if drive_service and hasattr(drive_service, 'download_file'):
             if await asyncio.to_thread(drive_service.download_file, DATA_FILE, DATA_FILE):
@@ -112,5 +118,6 @@ async def save_data(drive_service: Optional['GoogleDriveService'] = None) -> Non
         raise
 
 async def get_data() -> Dict[str, Any]:
-    """Retorna uma cópia dos dados atuais"""
-    return DATA_CACHE.copy()
+    """Retorna uma cópia dos dados"""
+    async with DATA_LOCK:
+        return DATA_CACHE.copy()
