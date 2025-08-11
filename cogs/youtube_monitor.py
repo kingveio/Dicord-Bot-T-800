@@ -3,8 +3,8 @@ from discord.ext import commands, tasks
 from discord import app_commands
 import logging
 from datetime import datetime
-from data_manager import get_data, save_data
 
+# Configuração do logger para este cog
 logger = logging.getLogger("T-800")
 
 class YouTubeMonitor(commands.Cog):
@@ -26,12 +26,12 @@ class YouTubeMonitor(commands.Cog):
 
         logger.info("🔍 Análise de alvos YouTube iniciada...")
         try:
-            data = await get_data()
+            data = await self.bot.get_data()
             if not data:
                 logger.error("⚠️ Dados não carregados corretamente! Alerta: Falha na operação.")
                 return
 
-            if data["monitored_users"]["youtube"]:
+            if "youtube" in data["monitored_users"] and data["monitored_users"]["youtube"]:
                 channels_to_check = list(data["monitored_users"]["youtube"].keys())
                 live_status = await self.bot.youtube_api.check_live_channels(channels_to_check)
 
@@ -59,6 +59,7 @@ class YouTubeMonitor(commands.Cog):
             logger.error(f"❌ Falha no monitoramento do YouTube: {e}. Alerta: Falha na operação.")
 
     # ========== COMANDOS DE ADMINISTRAÇÃO ========== #
+    # O decorador @app_commands.command é o que registra o comando como um slash command.
     @app_commands.command(name="adicionar_yt", description="Adiciona um canal do YouTube para monitoramento")
     @app_commands.describe(
         nome="Nome do canal do YouTube",
@@ -68,8 +69,11 @@ class YouTubeMonitor(commands.Cog):
         """Adiciona um canal do YouTube à lista de monitoramento."""
         try:
             await interaction.response.defer(ephemeral=True)
-            data = await get_data()
+            data = await self.bot.get_data()
 
+            if "youtube" not in data["monitored_users"]:
+                data["monitored_users"]["youtube"] = {}
+                
             if nome.lower() in data["monitored_users"]["youtube"]:
                 return await interaction.edit_original_response(
                     content=f"⚠️ {nome} já é um alvo! Alerta: Falha na operação."
@@ -80,7 +84,7 @@ class YouTubeMonitor(commands.Cog):
                 "added_at": datetime.now().isoformat(),
                 "guild_id": interaction.guild.id
             }
-            await save_data(self.bot.drive_service)
+            await self.bot.save_data()
             await interaction.edit_original_response(
                 content=f"✅ **{nome}** adicionado ao sistema e vinculado a {usuario.mention}. Missão concluída."
             )
@@ -97,15 +101,15 @@ class YouTubeMonitor(commands.Cog):
         """Remove um canal do YouTube da lista de monitoramento."""
         try:
             await interaction.response.defer(ephemeral=True)
-            data = await get_data()
+            data = await self.bot.get_data()
 
-            if nome.lower() not in data["monitored_users"]["youtube"]:
+            if "youtube" in data["monitored_users"] and nome.lower() not in data["monitored_users"]["youtube"]:
                 return await interaction.edit_original_response(
                     content=f"⚠️ {nome} não é um alvo! Alerta: Falha na operação."
                 )
 
             del data["monitored_users"]["youtube"][nome.lower()]
-            await save_data(self.bot.drive_service)
+            await self.bot.save_data()
 
             await interaction.edit_original_response(
                 content=f"✅ **{nome}** removido do sistema. Missão concluída."
@@ -116,4 +120,5 @@ class YouTubeMonitor(commands.Cog):
             )
 
 async def setup(bot: commands.Bot):
+    # O método setup() é essencial para carregar o cog.
     await bot.add_cog(YouTubeMonitor(bot))
