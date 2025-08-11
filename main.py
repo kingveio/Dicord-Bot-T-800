@@ -4,12 +4,13 @@ import threading
 import asyncio
 import logging
 import aiohttp
+import json
 from datetime import datetime
 from flask import Flask, jsonify
 from drive_service import GoogleDriveService
 from twitch_api import TwitchAPI
-from youtube_api import YouTubeAPI # <-- Adicione esta linha
-from data_manager import load_data_from_drive_if_exists, save_data
+from youtube_api import YouTubeAPI
+from data_manager import load_data_from_drive_if_exists
 from discord_bot import bot
 
 # Configuração do logger antes de qualquer uso
@@ -37,8 +38,9 @@ configure_logging()
 
 REQUIRED_ENV = [
     "DISCORD_TOKEN", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET",
+    "YOUTUBE_API_KEY", # <-- Adicionado
     "DRIVE_FOLDER_ID", "DRIVE_PRIVATE_KEY_ID", "DRIVE_PRIVATE_KEY",
-    "DRIVE_CLIENT_ID", "YOUTUBE_API_KEY" # <-- Adicione esta linha
+    "DRIVE_CLIENT_ID"
 ]
 
 if missing := [var for var in REQUIRED_ENV if var not in os.environ]:
@@ -61,35 +63,23 @@ def system_status():
         "mission": "monitorar_streams"
     })
 
-async def initialize_data_and_services(bot_instance):
-    """Inicializa o sistema de dados e serviços do bot."""
-    try:
-        drive_service = GoogleDriveService()
-        if not hasattr(drive_service, 'download_file'):
-            raise AttributeError("Serviço do Google Drive incompleto")
-        
-        await load_data_from_drive_if_exists(drive_service)
-        return drive_service
-    except Exception as e:
-        logger.error(f"Falha ao inicializar Google Drive: {e}. O bot tentará continuar com dados locais se existirem.")
-        if os.path.exists("streamers.json"):
-            pass
-        return None
-
 async def main_async():
     try:
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
-            # Inicializa APIs e services
+            # Inicializa APIs
             bot.twitch_api = TwitchAPI(
                 session,
                 os.environ["TWITCH_CLIENT_ID"],
                 os.environ["TWITCH_CLIENT_SECRET"]
             )
-            bot.youtube_api = YouTubeAPI( # <-- Adicione esta linha
+            bot.youtube_api = YouTubeAPI(
                 session,
                 os.environ["YOUTUBE_API_KEY"]
-            )
-            bot.drive_service = await initialize_data_and_services(bot)
+            ) # <-- Adicionado
+            
+            # Inicializa sistema de dados
+            bot.drive_service = GoogleDriveService()
+            await load_data_from_drive_if_exists(bot.drive_service)
             
             # Inicia servidor web
             threading.Thread(
