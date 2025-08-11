@@ -7,9 +7,12 @@ logger = logging.getLogger(__name__)
 class KickAPI:
     """Classe para interagir com a API do Kick."""
     def __init__(self):
-        # Adiciona um User-Agent para evitar o bloqueio da API do Kick
+        # Adiciona múltiplos cabeçalhos para simular uma requisição de navegador e evitar bloqueio
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'en-US,en;q=0.9,pt-BR;q=0.8,pt;q=0.7',
+            'Referer': 'https://kick.com/',
         }
         self.session = aiohttp.ClientSession(headers=headers)
 
