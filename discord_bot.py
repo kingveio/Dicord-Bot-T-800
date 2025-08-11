@@ -66,7 +66,7 @@ async def on_ready():
     monitor_streams.start()
     logger.info("🔍 Monitoramento de streams iniciado...")
     
- @bot.tree.command(name="status", description="Mostra o status do bot e das APIs")
+@bot.tree.command(name="status", description="Mostra o status do bot e das APIs")
 async def status(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
 
