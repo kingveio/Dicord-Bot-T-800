@@ -36,6 +36,7 @@ class T800Bot(commands.Bot):
         """Evento quando o bot está pronto para uso."""
         if not self.synced:
             try:
+                # O problema pode estar aqui, se o bot não sincronizar os comandos.
                 await self.tree.sync()
                 for guild in self.guilds:
                     await self.tree.sync(guild=guild)
@@ -48,7 +49,7 @@ class T800Bot(commands.Bot):
         try:
             await self.load_extension("cogs.twitch_monitor")
             await self.load_extension("cogs.youtube_monitor")
-            await self.load_extension("cogs.admin") # Adiciona a linha para carregar o novo cog de admin
+            await self.load_extension("cogs.admin")
             self.system_ready = True
             logger.info("✅ Módulos de monitoramento carregados. Sistema online!")
         except Exception as e:
