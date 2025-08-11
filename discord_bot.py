@@ -11,6 +11,7 @@ from discord import app_commands
 from data_manager import get_cached_data, set_cached_data
 from twitch_api import TwitchAPI
 from kick_api import KickAPI
+from drive_service import GoogleDriveService
 
 logging.basicConfig(
     level=logging.INFO,
