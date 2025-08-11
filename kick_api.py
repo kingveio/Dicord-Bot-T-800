@@ -5,7 +5,7 @@ logger = logging.getLogger(__name__)
 
 class KickAPI:
     """Classe para interagir diretamente com a API pública do Kick."""
-    BASE_URL = "https://kick.com/api/v1/channels/"
+    BASE_URL = "https://kick.com/api/v2/channels/"
 
     async def get_stream_info(self, username: str):
         """Verifica se um canal do Kick está ao vivo."""
