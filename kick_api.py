@@ -8,7 +8,8 @@ logger = logging.getLogger(__name__)
 
 class KickAPI:
     """Classe para interagir com a API pública do Kick, usando o fluxo de autenticação."""
-    BASE_URL = "https://api.kick.com/public/v1/channels/"  # <--- URL CORRIGIDA
+    USER_URL = "https://kick.com/api/v1/users/"
+    LIVE_STREAMS_URL = "https://api.kick.com/public/v1/livestreams"
     TOKEN_URL = "https://id.kick.com/oauth/token"
 
     def __init__(self):
@@ -71,20 +72,35 @@ class KickAPI:
         }
         
         try:
-            response = await self.client.get(f"{self.BASE_URL}{username}", headers=headers)
+            # Etapa 1: Obter o ID do usuário a partir do nome de usuário
+            user_response = await self.client.get(f"{self.USER_URL}{username}")
+            if user_response.status_code != 200:
+                if user_response.status_code == 404:
+                    logger.warning(f"⚠️ Canal '{username}' não existe no Kick.")
+                else:
+                    logger.error(f"❌ Erro ao obter ID do canal '{username}': HTTP {user_response.status_code} - Resposta: {user_response.text}")
+                return None
             
-            if response.status_code == 404:
-                logger.warning(f"⚠️ Canal '{username}' não existe no Kick.")
+            user_data = user_response.json()
+            user_id = user_data.get("id")
+
+            if not user_id:
+                logger.warning(f"⚠️ ID de usuário não encontrado para o canal '{username}'.")
                 return None
-            elif response.status_code != 200:
-                logger.error(f"❌ Erro ao acessar dados do canal '{username}': HTTP {response.status_code} - Resposta: {response.text}")
+                
+            # Etapa 2: Usar o ID para verificar se o canal está ao vivo
+            live_streams_response = await self.client.get(f"{self.LIVE_STREAMS_URL}?broadcaster_user_id={user_id}", headers=headers)
+            
+            if live_streams_response.status_code != 200:
+                logger.error(f"❌ Erro ao acessar dados do canal '{username}': HTTP {live_streams_response.status_code} - Resposta: {live_streams_response.text}")
                 return None
 
-            data = response.json()
+            live_streams_data = live_streams_response.json()
 
-            if data.get("livestream"):
+            if live_streams_data.get("data"):
+                livestream_data = live_streams_data["data"][0]
                 logger.info(f"✅ Canal '{username}' está AO VIVO no Kick.")
-                return data
+                return livestream_data
             else:
                 logger.info(f"ℹ️ Canal '{username}' encontrado, mas está offline.")
                 return None
