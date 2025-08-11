@@ -2,72 +2,115 @@ import os
 import json
 import asyncio
 import logging
-from typing import Dict, Any, Optional
-from datetime import datetime, timedelta
+from typing import Dict, Any, Optional, TYPE_CHECKING
 
-from googleapiclient.errors import HttpError
+# Configuração do logger
+logger = logging.getLogger(__name__)
 
-logger = logging.getLogger("T-800")
+if TYPE_CHECKING:
+    from drive_service import GoogleDriveService
 
-# Nome do arquivo de dados no Google Drive
-DATA_FILE_NAME = "streamers.json"
+# Fallback para aiofiles
+try:
+    import aiofiles
+    USE_AIOFILES = True
+except ImportError:
+    USE_AIOFILES = False
+    logger.warning("aiofiles não disponível - usando operações síncronas")
 
-# Estrutura padrão de dados
-DEFAULT_DATA_STRUCTURE = {
+# Estrutura de dados global
+DATA_CACHE: Dict[str, Any] = {
     "streamers": {},
+    "youtube_channels": {},
+    "monitored_users": {
+        "twitch": {},
+        "youtube": {}
+    }
 }
+DATA_LOCK = asyncio.Lock()
+DATA_FILE = "streamers.json"
 
-# Cache de dados para evitar múltiplas requisições
-_DATA_CACHE = None
-_LAST_FETCHED = datetime.min
-_LAST_WRITE = datetime.min
-
-async def get_cached_data(drive_service) -> Dict[str, Any]:
-    """Retorna os dados do cache ou faz o download se estiver desatualizado."""
-    global _DATA_CACHE, _LAST_FETCHED
-    
-    if (datetime.now() - _LAST_FETCHED) < timedelta(minutes=1):
-        return _DATA_CACHE.copy() if _DATA_CACHE else DEFAULT_DATA_STRUCTURE.copy()
-    
-    if not drive_service.service:
-        logger.error("❌ Serviço do Google Drive não inicializado.")
-        return DEFAULT_DATA_STRUCTURE.copy()
-
+def validate_data_structure(data: Dict[str, Any]) -> bool:
+    """Valida a estrutura básica dos dados"""
     try:
-        data = await drive_service.download_file_to_memory(DATA_FILE_NAME)
-        if data:
-            _DATA_CACHE = data
-            _LAST_FETCHED = datetime.now()
-            return data.copy()
-        else:
-            logger.warning("Conteúdo do arquivo vazio ou não encontrado. Usando estrutura padrão.")
-            _DATA_CACHE = DEFAULT_DATA_STRUCTURE
-            _LAST_FETCHED = datetime.now()
-            return DEFAULT_DATA_STRUCTURE.copy()
-    except Exception as e:
-        logger.error(f"Erro fatal ao obter dados: {e}")
-        return DEFAULT_DATA_STRUCTURE.copy()
-
-async def set_cached_data(data: Dict[str, Any], drive_service) -> bool:
-    """Salva os dados atualizados e atualiza o cache."""
-    global _DATA_CACHE, _LAST_FETCHED, _LAST_WRITE
-    
-    if not drive_service.service:
-        logger.error("❌ Serviço do Google Drive não disponível.")
+        required_keys = ["streamers", "youtube_channels", "monitored_users"]
+        return all(k in data for k in required_keys)
+    except Exception:
         return False
+
+async def load_from_file(file_path: str) -> bool:
+    """Carrega dados de um arquivo local"""
+    try:
+        if USE_AIOFILES:
+            async with aiofiles.open(file_path, 'r') as f:
+                content = await f.read()
+        else:
+            with open(file_path, 'r') as f:
+                content = f.read()
         
-    if (datetime.now() - _LAST_WRITE) < timedelta(seconds=10):
-        logger.warning("⚠️ Tentativa de gravação muito rápida. Operação adiada.")
-        await asyncio.sleep(10)
+        if not content.strip():
+            logger.warning(f"Arquivo {file_path} vazio")
+            return False
+            
+        data = json.loads(content)
+        return validate_data_structure(data)
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON inválido em {file_path}: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Erro ao carregar {file_path}: {e}")
+        return False
 
-    success = await drive_service.upload_file_from_memory(json.dumps(data, indent=4), DATA_FILE_NAME)
-    if success:
-        _DATA_CACHE = data
-        _LAST_FETCHED = datetime.now()
-        _LAST_WRITE = datetime.now()
+async def load_data_from_drive_if_exists(drive_service: Optional['GoogleDriveService'] = None) -> None:
+    """Carrega dados do Drive ou arquivo local"""
+    global DATA_CACHE
     
-    return success
+    try:
+        if drive_service and hasattr(drive_service, 'download_file'):
+            if await asyncio.to_thread(drive_service.download_file, DATA_FILE, DATA_FILE):
+                if await load_from_file(DATA_FILE):
+                    logger.info("Dados carregados do Google Drive")
+                    return
 
-def get_last_fetched_time() -> datetime:
-    """Retorna o timestamp da última vez que os dados foram buscados."""
-    return _LAST_FETCHED
+        if os.path.exists(DATA_FILE):
+            if await load_from_file(DATA_FILE):
+                logger.info("Dados carregados localmente")
+                return
+
+        async with DATA_LOCK:
+            DATA_CACHE.update({
+                "streamers": {},
+                "youtube_channels": {},
+                "monitored_users": {
+                    "twitch": {},
+                    "youtube": {}
+                }
+            })
+        logger.info("Nova estrutura de dados criada")
+
+    except Exception as e:
+        logger.critical(f"Falha crítica ao carregar dados: {e}")
+        raise
+
+async def save_data(drive_service: Optional['GoogleDriveService'] = None) -> None:
+    """Salva dados localmente e no Drive"""
+    try:
+        async with DATA_LOCK:
+            if USE_AIOFILES:
+                async with aiofiles.open(DATA_FILE, 'w') as f:
+                    await f.write(json.dumps(DATA_CACHE, indent=2))
+            else:
+                with open(DATA_FILE, 'w') as f:
+                    json.dump(DATA_CACHE, f, indent=2)
+
+            if drive_service and hasattr(drive_service, 'upload_file'):
+                await asyncio.to_thread(drive_service.upload_file, DATA_FILE, DATA_FILE)
+        
+        logger.info("Dados salvos com sucesso")
+    except Exception as e:
+        logger.error(f"Erro ao salvar dados: {e}")
+        raise
+
+async def get_data() -> Dict[str, Any]:
+    """Retorna uma cópia dos dados atuais"""
+    return DATA_CACHE.copy()
