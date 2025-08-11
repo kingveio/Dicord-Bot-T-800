@@ -48,6 +48,7 @@ class T800Bot(commands.Bot):
         try:
             await self.load_extension("cogs.twitch_monitor")
             await self.load_extension("cogs.youtube_monitor")
+            await self.load_extension("cogs.admin") # Adiciona a linha para carregar o novo cog de admin
             self.system_ready = True
             logger.info("✅ Módulos de monitoramento carregados. Sistema online!")
         except Exception as e:
