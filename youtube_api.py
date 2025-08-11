@@ -23,3 +23,16 @@ class YouTubeAPI:
         live_status = {name.lower(): False for name in channel_names}
         logger.info("⚠️ Simulação de verificação ao vivo do YouTube. Nenhum canal será marcado como ao vivo.")
         return live_status
+
+    async def validate_channel_name(self, channel_name: str) -> bool:
+        """
+        Esta é uma implementação de exemplo para validar um nome de canal.
+        Em um ambiente real, esta função faria uma chamada para a API do YouTube
+        para verificar se o canal existe.
+        """
+        # Substitua esta lógica pela sua chamada de API real
+        logger.info(f"🔍 Validando o nome do canal: '{channel_name}'...")
+        # Por enquanto, vamos supor que a validação sempre é bem-sucedida para fins de demonstração
+        # Em um cenário real, você faria uma requisição e retornaria True ou False
+        await asyncio.sleep(1) # Simula um atraso de rede
+        return True
