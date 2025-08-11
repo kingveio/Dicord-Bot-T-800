@@ -21,6 +21,7 @@ class T800Bot(commands.Bot):
                 name="análise de alvos humanos"
             )
         )
+        self.owner_id = 659611103399116800 # <-- Substitua este ID pelo seu
         self.start_time = datetime.now()
         self.live_role_name = "AO VIVO"
         self.system_ready = False
