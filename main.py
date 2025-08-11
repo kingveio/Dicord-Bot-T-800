@@ -10,7 +10,7 @@ from flask import Flask, jsonify
 from drive_service import GoogleDriveService
 from twitch_api import TwitchAPI
 from youtube_api import YouTubeAPI
-from data_manager import load_data_from_drive_if_exists, save_data, get_data
+from data_manager import load_data, save_data, get_data
 from discord_bot import bot
 
 # Configuração do logger antes de qualquer uso
@@ -42,70 +42,35 @@ REQUIRED_ENV = [
     "DRIVE_CLIENT_ID", "YOUTUBE_API_KEY"
 ]
 
-if missing := [var for var in REQUIRED_ENV if var not in os.environ]:
-    logger.critical(f"FALHA DE INICIALIZAÇÃO: Variáveis ausentes - {missing}")
-    sys.exit(1)
+def check_env():
+    """Verifica se todas as variáveis de ambiente necessárias estão presentes."""
+    for var in REQUIRED_ENV:
+        if var not in os.environ:
+            logger.critical(f"❌ Variável de ambiente obrigatória não encontrada: {var}")
+            sys.exit(1)
+    logger.info("✅ Variáveis de ambiente verificadas com sucesso.")
 
-from flask import Flask, jsonify
+async def initialize_data(drive_service: Optional[GoogleDriveService]) -> None:
+    """Inicializa a estrutura de dados, carregando do Drive ou criando uma nova."""
+    try:
+        await load_data(drive_service)
+        logger.info("✅ Dados carregados ou inicializados com sucesso.")
+    except Exception as e:
+        logger.critical(f"❌ Falha crítica ao carregar/inicializar dados: {e}")
+        sys.exit(1)
 
+# Inicialização do servidor Flask
 app = Flask(__name__)
 
 @app.route('/ping')
 def ping():
-    return jsonify({'status': 'online'})
-START_TIME = datetime.now()
-
-@app.route('/status')
-def system_status():
-    return jsonify({
-        "status": "operacional",
-        "uptime": str(datetime.now() - START_TIME),
-        "mission": "monitorar_streams"
-    })
-
-async def initialize_data():
-    """Inicializa o sistema de dados com fallbacks robustos"""
-    try:
-        drive_service = GoogleDriveService()
-        
-        # Verifica se o serviço do Drive está funcional
-        if not hasattr(drive_service, 'download_file'):
-            raise AttributeError("Serviço do Google Drive incompleto")
-        
-        await load_data_from_drive_if_exists(drive_service)
-        return drive_service
-        
-    except Exception as e:
-        logger.error(f"Falha ao inicializar Google Drive: {e}")
-        
-        # Fallback para arquivo local
-        if os.path.exists("streamers.json"):
-            try:
-                with open("streamers.json", 'r') as f:
-                    data = json.load(f)
-                    if isinstance(data, dict):
-                        await save_data()
-                        logger.info("Dados carregados do arquivo local")
-            except Exception as e:
-                logger.error(f"Erro ao ler arquivo local: {e}")
-        
-        # Cria nova estrutura se necessário
-        if not os.path.exists("streamers.json"):
-            with open("streamers.json", 'w') as f:
-                json.dump({
-                    "streamers": {},
-                    "youtube_channels": {},
-                    "monitored_users": {
-                        "twitch": {},
-                        "youtube": {}
-                    }
-                }, f, indent=2)
-            logger.info("Novo arquivo de dados criado")
-        
-        return None
+    return jsonify({"status": "online", "bot_ready": bot.system_ready})
 
 async def main_async():
     try:
+        # Verifica variáveis de ambiente
+        check_env()
+
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
             # Inicializa APIs
             bot.twitch_api = TwitchAPI(
@@ -113,16 +78,16 @@ async def main_async():
                 os.environ["TWITCH_CLIENT_ID"],
                 os.environ["TWITCH_CLIENT_SECRET"]
             )
-            # A linha abaixo foi corrigida.
-            # A nova classe YouTubeAPI não recebe mais o objeto 'session'.
             bot.youtube_api = YouTubeAPI(
+                session,
                 os.environ["YOUTUBE_API_KEY"]
             )
             
-            # Inicializa sistema de dados
-            bot.drive_service = await initialize_data()
+            # Inicializa Drive Service e dados
+            bot.drive_service = GoogleDriveService()
+            await initialize_data(bot.drive_service)
             
-            # Inicia servidor web
+            # Inicia servidor web em um thread separado
             threading.Thread(
                 target=lambda: app.run(
                     host='0.0.0.0',
@@ -146,4 +111,3 @@ if __name__ == '__main__':
         logger.info("Missão interrompida pelo usuário")
     except Exception as e:
         logger.error(f"ERRO: {str(e)}")
-        sys.exit(1)
