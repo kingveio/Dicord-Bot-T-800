@@ -53,7 +53,6 @@ class T800Bot(commands.Bot):
 bot = T800Bot()
 
 # Adiciona os métodos de dados à classe do bot para facilitar o acesso dos cogs
-# Isso é necessário porque os cogs precisam acessar essas funções para salvar/carregar dados.
 async def get_data_from_bot():
     return await get_data()
 
