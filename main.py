@@ -52,8 +52,8 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    uptime = datetime.now() - bot.start_time
-    hours, remainder = divmod(uptime.total_seconds(), 3600)
+    uptime_seconds = (datetime.now() - bot.start_time).total_seconds() if hasattr(bot, 'start_time') else 0
+    hours, remainder = divmod(uptime_seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
     
     bot_name = bot.user.name if bot.user else "Bot não conectado"
@@ -65,6 +65,10 @@ def home():
         "uptime": f"{int(hours)}h {int(minutes)}m {int(seconds)}s",
         "discord_id": bot_id
     })
+
+@app.route('/ping')
+def ping():
+    return jsonify({"status": "pong"})
 
 async def initialize_data():
     """Inicializa o sistema de dados e o Google Drive"""
