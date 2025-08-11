@@ -69,6 +69,14 @@ class YouTubeMonitor(commands.Cog):
         """Adiciona um canal do YouTube à lista de monitoramento."""
         await interaction.response.defer(ephemeral=True)
         try:
+            # Novo passo: valida o nome do canal antes de salvar
+            is_valid = await self.bot.youtube_api.validate_channel_name(nome)
+            if not is_valid:
+                await interaction.edit_original_response(
+                    content=f"⚠️ O canal '{nome}' não pôde ser encontrado. Por favor, verifique o nome. Alerta: Falha na operação."
+                )
+                return
+
             data = await self.bot.get_data()
             response_content = ""
 
@@ -90,7 +98,6 @@ class YouTubeMonitor(commands.Cog):
 
         except Exception as e:
             logger.error(f"❌ Erro ao adicionar alvo do YouTube: {e}. Alerta: Falha na operação.")
-            # Garante que uma resposta de erro será enviada
             await interaction.edit_original_response(content=f"❌ Erro ao adicionar alvo do YouTube: {e}. Alerta: Falha na operação.")
 
     @app_commands.command(name="remover_yt", description="Remove um canal do YouTube do monitoramento")
