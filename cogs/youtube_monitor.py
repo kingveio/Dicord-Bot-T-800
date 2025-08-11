@@ -3,92 +3,86 @@ from discord.ext import commands, tasks
 from discord import app_commands
 import logging
 from datetime import datetime
+from data_manager import get_data, save_data
 
 logger = logging.getLogger("T-800")
 
 class YouTubeMonitor(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.live_role_name = bot.live_role_name
-        self.youtube_monitor_task.start()
+        self.live_role_name = "AO VIVO"
+        self.monitor_youtube_streams.start()
         logger.info("✅ Módulo de monitoramento do YouTube inicializado.")
 
     def cog_unload(self):
-        """Para a tarefa de loop quando o cog é descarregado."""
-        self.youtube_monitor_task.stop()
+        self.monitor_youtube_streams.stop()
         logger.info("❌ Módulo de monitoramento do YouTube descarregado.")
 
-    @tasks.loop(minutes=5) # Ajuste a frequência conforme necessário
-    async def youtube_monitor_task(self):
+    @tasks.loop(minutes=5)
+    async def monitor_youtube_streams(self):
         """Verifica periodicamente os canais do YouTube monitorados."""
         if not self.bot.system_ready:
             return
 
-        logger.info("🔍 Analisando alvos do YouTube...")
+        logger.info("🔍 Análise de alvos YouTube iniciada...")
         try:
-            data = await self.bot.get_data()
-            youtube_monitored_users = data["monitored_users"].get("youtube", {})
-            
-            if not youtube_monitored_users:
+            data = await get_data()
+            if not data:
+                logger.error("⚠️ Dados não carregados corretamente! Alerta: Falha na operação.")
                 return
 
-            channels = list(youtube_monitored_users.keys())
-            
-            live_status = await self.bot.youtube_api.get_channel_live_status(channels)
+            if data["monitored_users"]["youtube"]:
+                channels_to_check = list(data["monitored_users"]["youtube"].keys())
+                live_status = await self.bot.youtube_api.check_live_channels(channels_to_check)
 
-            for channel_name, is_live in live_status.items():
-                user_info = youtube_monitored_users.get(channel_name)
-                if not user_info: continue
+                for channel_name, is_live in live_status.items():
+                    user_info = data["monitored_users"]["youtube"].get(channel_name.lower())
+                    if not user_info: continue
 
-                guild = self.bot.get_guild(user_info.get("guild_id"))
-                if not guild: continue
-                
-                member = guild.get_member(user_info.get("added_by"))
-                if not member: continue
+                    guild = self.bot.get_guild(user_info.get("guild_id"))
+                    member = guild.get_member(user_info.get("added_by")) if guild else None
+                    if not member: continue
 
-                live_role = discord.utils.get(guild.roles, name=self.live_role_name)
-                if not live_role: continue
+                    live_role = discord.utils.get(guild.roles, name=self.live_role_name)
+                    if not live_role: continue
 
-                if is_live:
-                    if live_role not in member.roles:
-                        await member.add_roles(live_role, reason="Canal do YouTube está ao vivo")
-                        logger.info(f"✅ Cargo 'AO VIVO' adicionado para {member.name} (YouTube). Missão concluída.")
-                else:
-                    if live_role in member.roles:
-                        await member.remove_roles(live_role, reason="Canal do YouTube não está mais ao vivo")
-                        logger.info(f"✅ Cargo 'AO VIVO' removido de {member.name} (YouTube). Missão concluída.")
+                    if is_live:
+                        if live_role not in member.roles:
+                            await member.add_roles(live_role, reason="Canal do YouTube está ao vivo")
+                            logger.info(f"✅ Cargo 'AO VIVO' adicionado para {member.name} (YouTube). Missão concluída.")
+                    else:
+                        if live_role in member.roles:
+                            await member.remove_roles(live_role, reason="Canal do YouTube não está mais ao vivo")
+                            logger.info(f"✅ Cargo 'AO VIVO' removido de {member.name} (YouTube). Missão concluída.")
 
         except Exception as e:
             logger.error(f"❌ Falha no monitoramento do YouTube: {e}. Alerta: Falha na operação.")
 
-    # ========== COMANDOS DE ADMINISTRAÇÃO PARA YOUTUBE ========== #
+    # ========== COMANDOS DE ADMINISTRAÇÃO ========== #
     @app_commands.command(name="adicionar_yt", description="Adiciona um canal do YouTube para monitoramento")
     @app_commands.describe(
-        nome="Nome de usuário do canal do YouTube",
+        nome="Nome do canal do YouTube",
         usuario="O usuário do Discord a ser vinculado"
     )
-    async def adicionar_youtube_channel(self, interaction: discord.Interaction, nome: str, usuario: discord.Member):
+    async def adicionar_yt(self, interaction: discord.Interaction, nome: str, usuario: discord.Member):
         """Adiciona um canal do YouTube à lista de monitoramento."""
         try:
             await interaction.response.defer(ephemeral=True)
-            data = await self.bot.get_data()
-            
-            youtube_monitored_users = data["monitored_users"].get("youtube", {})
+            data = await get_data()
 
-            if nome.lower() in youtube_monitored_users:
+            if nome.lower() in data["monitored_users"]["youtube"]:
                 return await interaction.edit_original_response(
                     content=f"⚠️ {nome} já é um alvo! Alerta: Falha na operação."
                 )
             
-            youtube_monitored_users[nome.lower()] = {
+            data["monitored_users"]["youtube"][nome.lower()] = {
                 "added_by": usuario.id,
                 "added_at": datetime.now().isoformat(),
                 "guild_id": interaction.guild.id
             }
-            data["monitored_users"]["youtube"] = youtube_monitored_users
-            await self.bot.save_data()
+            await save_data(self.bot.drive_service)
             await interaction.edit_original_response(
-                content=f"✅ **{nome}** (YouTube) adicionado ao sistema e vinculado a {usuario.mention}. Missão concluída."
+                content=f"✅ **{nome}** adicionado ao sistema e vinculado a {usuario.mention}. Missão concluída."
             )
         except Exception as e:
             await interaction.edit_original_response(
@@ -97,27 +91,24 @@ class YouTubeMonitor(commands.Cog):
 
     @app_commands.command(name="remover_yt", description="Remove um canal do YouTube do monitoramento")
     @app_commands.describe(
-        nome="Nome de usuário do canal do YouTube"
+        nome="Nome do canal do YouTube"
     )
-    async def remover_youtube_channel(self, interaction: discord.Interaction, nome: str):
+    async def remover_yt(self, interaction: discord.Interaction, nome: str):
         """Remove um canal do YouTube da lista de monitoramento."""
         try:
             await interaction.response.defer(ephemeral=True)
-            data = await self.bot.get_data()
-            
-            youtube_monitored_users = data["monitored_users"].get("youtube", {})
+            data = await get_data()
 
-            if nome.lower() not in youtube_monitored_users:
+            if nome.lower() not in data["monitored_users"]["youtube"]:
                 return await interaction.edit_original_response(
                     content=f"⚠️ {nome} não é um alvo! Alerta: Falha na operação."
                 )
 
-            del youtube_monitored_users[nome.lower()]
-            data["monitored_users"]["youtube"] = youtube_monitored_users
-            await self.bot.save_data()
+            del data["monitored_users"]["youtube"][nome.lower()]
+            await save_data(self.bot.drive_service)
 
             await interaction.edit_original_response(
-                content=f"✅ **{nome}** (YouTube) removido do sistema. Missão concluída."
+                content=f"✅ **{nome}** removido do sistema. Missão concluída."
             )
         except Exception as e:
             await interaction.edit_original_response(
@@ -125,5 +116,4 @@ class YouTubeMonitor(commands.Cog):
             )
 
 async def setup(bot: commands.Bot):
-    """Função de inicialização do cog."""
     await bot.add_cog(YouTubeMonitor(bot))
