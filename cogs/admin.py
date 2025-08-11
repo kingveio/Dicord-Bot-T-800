@@ -13,11 +13,12 @@ class Admin(commands.Cog):
         logger.info("❌ Módulo de administração descarregado.")
 
     @commands.command(name="recarregar")
-    # A linha abaixo foi removida para que o comando possa ser usado por qualquer administrador.
-    # @commands.is_owner()
     async def reload_cog(self, ctx: commands.Context, cog_name: str):
         """Recarrega um módulo do bot."""
-        if not ctx.author.guild_permissions.administrator:
+        # O ID do seu usuário do Discord.
+        OWNER_ID = 659611103399116800
+        
+        if ctx.author.id != OWNER_ID:
             await ctx.send("❌ Você não tem permissão para usar este comando. Alerta: Falha na operação.")
             return
 
