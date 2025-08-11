@@ -10,7 +10,7 @@ logger = logging.getLogger("T-800")
 class Monitoramento(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.live_role = bot.live_role
+        self.live_role_name = "AO VIVO"
         self.monitor_streams.start()
         logger.info("✅ Módulo de monitoramento da Twitch inicializado.")
 
@@ -43,7 +43,7 @@ class Monitoramento(commands.Cog):
                     member = guild.get_member(user_info.get("added_by")) if guild else None
                     if not member: continue
 
-                    live_role = discord.utils.get(guild.roles, name=self.live_role)
+                    live_role = discord.utils.get(guild.roles, name=self.live_role_name)
                     if not live_role: continue
 
                     if is_live:
@@ -154,6 +154,7 @@ class Monitoramento(commands.Cog):
             output += "Nenhum alvo da Twitch encontrado no sistema."
 
         await interaction.edit_original_response(content=output)
-        
+
 async def setup(bot: commands.Bot):
+    """Função de inicialização do cog."""
     await bot.add_cog(Monitoramento(bot))
