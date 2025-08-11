@@ -1,59 +1,47 @@
 import os
-import sys
-import threading
-import asyncio
-import logging
 import aiohttp
-import json
-from datetime import datetime
+import asyncio
+import threading
+import logging
 from flask import Flask, jsonify
-from drive_service import GoogleDriveService
+from dotenv import load_dotenv
+
 from twitch_api import TwitchAPI
-from youtube_api import YouTubeAPI
-from data_manager import load_data, save_data, get_data
+from drive_service import DriveService
+from data_manager import initialize_data
 from discord_bot import bot
 
-# Configuração do logger antes de qualquer uso
-logger = logging.getLogger("T-800")
+# Carrega variáveis de ambiente
+load_dotenv()
 
-def configure_logging():
-    """Configura o sistema de logging"""
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)s | T-800 | %(message)s",
-        handlers=[
-            logging.FileHandler("t800_system.log"),
-            logging.StreamHandler()
-        ]
-    )
-
-# Configuração T-800
-os.environ.setdefault('DISABLE_VOICE', 'true')
-print("╔════════════════════════════════════════════╗")
-print("║        SISTEMA T-800 INICIALIZANDO         ║")
-print("║    Versão 2.0 - Monitoramento Ativo        ║")
-print("╚════════════════════════════════════════════╝")
-
-configure_logging()
+# Configuração de logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 REQUIRED_ENV = [
-    "DISCORD_TOKEN", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET",
-    "DRIVE_FOLDER_ID", "DRIVE_PRIVATE_KEY_ID", "DRIVE_PRIVATE_KEY",
-    "DRIVE_CLIENT_ID", "YOUTUBE_API_KEY"
+    "DISCORD_TOKEN",
+    "TWITCH_CLIENT_ID",
+    "TWITCH_CLIENT_SECRET"
 ]
 
-def check_env():
-    """Verifica se todas as variáveis de ambiente necessárias estão presentes."""
-    for var in REQUIRED_ENV:
-        if var not in os.environ:
-            logger.critical(f"❌ Variável de ambiente obrigatória não encontrada: {var}")
-            sys.exit(1)
-    logger.info("✅ Variáveis de ambiente verificadas com sucesso.")
+# Servidor Flask para health check
+app = Flask(__name__)
+@app.route("/")
+def health_check():
+    """Endpoint de health check."""
+    return jsonify({"status": "healthy", "message": "Bot is running"})
+
 
 async def main_async():
+    """Função principal assíncrona que inicializa e executa o bot."""
     try:
         # Verifica variáveis de ambiente
-        check_env()
+        missing_vars = [var for var in REQUIRED_ENV if not os.getenv(var)]
+        if missing_vars:
+            raise ValueError(f"❌ Variáveis de ambiente faltando: {', '.join(missing_vars)}")
 
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
             # Inicializa APIs
@@ -62,27 +50,11 @@ async def main_async():
                 os.environ["TWITCH_CLIENT_ID"],
                 os.environ["TWITCH_CLIENT_SECRET"]
             )
-            bot.youtube_api = YouTubeAPI(
-                session,
-                os.environ["YOUTUBE_API_KEY"]
-            )
             
-            # Inicializa Drive Service e carrega os dados usando a função load_data.
-            bot.drive_service = GoogleDriveService()
-            await load_data(bot.drive_service)
+            # Inicializa sistema de dados
+            bot.drive_service = await initialize_data()
             
-            # Cria a aplicação Flask
-            app = Flask(__name__)
-
-            @app.route("/")
-            def status():
-                return jsonify(
-                    status="online",
-                    bot_name="T-800",
-                    start_time=bot.start_time.strftime("%Y-%m-%d %H:%M:%S")
-                )
-
-            # Inicia servidor web em um thread separado
+            # Inicia servidor web
             threading.Thread(
                 target=lambda: app.run(
                     host='0.0.0.0',
@@ -99,10 +71,14 @@ async def main_async():
         logger.critical(f"FALHA CATASTRÓFICA: {str(e)}")
         raise
 
-if __name__ == '__main__':
+
+def main():
+    """Função de entrada do programa."""
     try:
         asyncio.run(main_async())
     except KeyboardInterrupt:
-        logger.info("Missão interrompida pelo usuário")
-    except Exception as e:
-        logger.error(f"ERRO: {str(e)}")
+        logger.info("Programa encerrado pelo usuário.")
+
+
+if __name__ == "__main__":
+    main()
