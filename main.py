@@ -50,4 +50,4 @@ if __name__ == "__main__":
     async def setup_hook():
         await initialize_apis(discord_bot)
     discord_bot.setup_hook = setup_hook
-    discord_bot.run(os.getenv("DISCORD_BOT_TOKEN"))
+    discord_bot.run(os.getenv("DISCORD_TOKEN"))
