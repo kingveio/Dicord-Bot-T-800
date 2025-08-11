@@ -3,7 +3,7 @@ import json
 import asyncio
 import logging
 from typing import Dict, Any, Optional
-from drive_service import GoogleDriveService # Corrigido: Importação absoluta e nome correto da classe
+from drive_service import GoogleDriveService
 
 # Configuração do logger
 logger = logging.getLogger(__name__)
@@ -19,10 +19,8 @@ except ImportError:
 # Estrutura de dados global
 DATA_CACHE: Dict[str, Any] = {
     "streamers": {},
-    "youtube_channels": {},
     "monitored_users": {
-        "twitch": {},
-        "youtube": {}
+        "twitch": {}
     }
 }
 DATA_LOCK = asyncio.Lock()
@@ -31,7 +29,7 @@ DATA_FILE = "streamers.json"
 def validate_data_structure(data: Dict[str, Any]) -> bool:
     """Valida a estrutura básica dos dados"""
     try:
-        required_keys = ["streamers", "youtube_channels", "monitored_users"]
+        required_keys = ["streamers", "monitored_users"]
         return all(k in data for k in required_keys)
     except Exception:
         return False
@@ -85,10 +83,8 @@ async def load_data_from_drive_if_exists(drive_service: Optional[GoogleDriveServ
         async with DATA_LOCK:
             DATA_CACHE.update({
                 "streamers": {},
-                "youtube_channels": {},
                 "monitored_users": {
-                    "twitch": {},
-                    "youtube": {}
+                    "twitch": {}
                 }
             })
         logger.info("Nova estrutura de dados criada")
