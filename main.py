@@ -38,20 +38,19 @@ configure_logging()
 REQUIRED_ENV = [
     "DISCORD_TOKEN", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET",
     "DRIVE_FOLDER_ID", "DRIVE_PRIVATE_KEY_ID", "DRIVE_PRIVATE_KEY",
-    "DRIVE_CLIENT_ID", "YOUTUBE_API_KEY"
+    "DRIVE_CLIENT_ID"
 ]
 
 if missing := [var for var in REQUIRED_ENV if var not in os.environ]:
     logger.critical(f"FALHA DE INICIALIZAÇÃO: Variáveis ausentes - {missing}")
     sys.exit(1)
 
-from flask import Flask, jsonify
-
 app = Flask(__name__)
 
 @app.route('/ping')
 def ping():
     return jsonify({'status': 'online'})
+
 START_TIME = datetime.now()
 
 @app.route('/status')
@@ -67,7 +66,6 @@ async def initialize_data():
     try:
         drive_service = GoogleDriveService()
         
-        # Verifica se o serviço do Drive está funcional
         if not hasattr(drive_service, 'download_file'):
             raise AttributeError("Serviço do Google Drive incompleto")
         
@@ -77,7 +75,6 @@ async def initialize_data():
     except Exception as e:
         logger.error(f"Falha ao inicializar Google Drive: {e}")
         
-        # Fallback para arquivo local
         if os.path.exists("streamers.json"):
             try:
                 with open("streamers.json", 'r') as f:
@@ -88,15 +85,12 @@ async def initialize_data():
             except Exception as e:
                 logger.error(f"Erro ao ler arquivo local: {e}")
         
-        # Cria nova estrutura se necessário
         if not os.path.exists("streamers.json"):
             with open("streamers.json", 'w') as f:
                 json.dump({
                     "streamers": {},
-                    "youtube_channels": {},
                     "monitored_users": {
-                        "twitch": {},
-                        "youtube": {}
+                        "twitch": {}
                     }
                 }, f, indent=2)
             logger.info("Novo arquivo de dados criado")
@@ -112,7 +106,7 @@ async def main_async():
                 os.environ["TWITCH_CLIENT_ID"],
                 os.environ["TWITCH_CLIENT_SECRET"]
             )
-                       
+            
             # Inicializa sistema de dados
             bot.drive_service = await initialize_data()
             
