@@ -113,8 +113,9 @@ async def main_async():
                 os.environ["TWITCH_CLIENT_ID"],
                 os.environ["TWITCH_CLIENT_SECRET"]
             )
+            # A linha abaixo foi corrigida.
+            # A nova classe YouTubeAPI não recebe mais o objeto 'session'.
             bot.youtube_api = YouTubeAPI(
-                session,
                 os.environ["YOUTUBE_API_KEY"]
             )
             
