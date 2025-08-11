@@ -37,11 +37,12 @@ class T800Bot(commands.Bot):
         if not self.synced:
             try:
                 # Sincroniza os comandos globalmente para que funcionem em qualquer servidor
-                await self.tree.sync()
+                synced_commands = await self.tree.sync()
                 self.synced = True
-                logger.info("✅ Missão: Comandos sincronizados globalmente com sucesso!")
+                logger.info(f"✅ Missão: {len(synced_commands)} comandos sincronizados globalmente com sucesso!")
 
             except Exception as e:
+                self.synced = False
                 logger.error(f"❌ Falha ao sincronizar comandos: {e}")
 
         # Carrega os cogs
