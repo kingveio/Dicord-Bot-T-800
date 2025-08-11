@@ -10,7 +10,6 @@ class KickAPI:
     TOKEN_URL = "https://kick.com/api/v1/oauth/token"
     
     def __init__(self):
-        # Obtém as credenciais das variáveis de ambiente.
         self.client_id = os.getenv("KICK_CLIENT_ID")
         self.client_secret = os.getenv("KICK_CLIENT_SECRET")
         
