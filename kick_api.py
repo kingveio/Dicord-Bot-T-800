@@ -1,21 +1,24 @@
+import aiohttp
 import logging
-from typing import Optional, Dict, Any
-from KickApi import Kick
 
 logger = logging.getLogger(__name__)
 
 class KickAPI:
-    """Classe para interagir com a API do Kick usando a biblioteca KickApi."""
-    def __init__(self):
-        self.kick_api = Kick()
+    """Classe para interagir diretamente com a API pública do Kick."""
+    BASE_URL = "https://kick.com/api/v1/channels/"
 
-    async def get_stream_info(self, username: str) -> Optional[Dict[str, Any]]:
+    async def get_stream_info(self, username: str):
         """Verifica se um canal do Kick está ao vivo."""
         try:
-            channel_data = await self.kick_api.get_channel(username)
-            if channel_data and channel_data.get('livestream'):
-                return channel_data
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{self.BASE_URL}{username}") as resp:
+                    if resp.status != 200:
+                        logger.warning(f"⚠️ Canal '{username}' não encontrado no Kick.")
+                        return None
+                    data = await resp.json()
+                    if data.get("livestream"):
+                        return data
+                    return None
         except Exception as e:
-            logger.error(f"❌ Erro ao verificar stream do Kick para '{username}' usando a biblioteca KickApi: {e}")
-        
-        return None
+            logger.error(f"❌ Erro ao verificar stream do Kick para '{username}': {e}")
+            return None
