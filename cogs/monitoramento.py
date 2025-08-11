@@ -5,25 +5,26 @@ import logging
 from datetime import datetime
 from data_manager import get_data, save_data
 
+# Configuração do logger para este cog
 logger = logging.getLogger("T-800")
 
 class Monitoramento(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
         self.live_role_name = "AO VIVO"
-        self.monitor_streams.start()
-        logger.info("✅ Módulo de monitoramento da Twitch inicializado.")
+        self.monitor_twitch_streams.start()
+        logger.info("✅ Módulo de monitoramento do Twitch inicializado.")
 
     def cog_unload(self):
-        self.monitor_streams.stop()
-        logger.info("❌ Módulo de monitoramento da Twitch descarregado.")
+        self.monitor_twitch_streams.stop()
+        logger.info("❌ Módulo de monitoramento do Twitch descarregado.")
 
-    @tasks.loop(minutes=3)
-    async def monitor_streams(self):
-        """Verifica periodicamente os streamers monitorados na Twitch."""
+    @tasks.loop(minutes=5)
+    async def monitor_twitch_streams(self):
+        """Verifica periodicamente os canais da Twitch monitorados."""
         if not self.bot.system_ready:
             return
-
+            
         logger.info("🔍 Análise de alvos Twitch iniciada...")
         try:
             data = await get_data()
@@ -31,7 +32,8 @@ class Monitoramento(commands.Cog):
                 logger.error("⚠️ Dados não carregados corretamente! Alerta: Falha na operação.")
                 return
 
-            if data["monitored_users"]["twitch"]:
+            # Monitorar Twitch
+            if "twitch" in data["monitored_users"] and data["monitored_users"]["twitch"]:
                 streamers = list(data["monitored_users"]["twitch"].keys())
                 live_status = await self.bot.twitch_api.check_live_channels(streamers)
 
@@ -56,34 +58,29 @@ class Monitoramento(commands.Cog):
                             logger.info(f"✅ Cargo 'AO VIVO' removido de {member.name} (Twitch). Missão concluída.")
 
         except Exception as e:
-            logger.error(f"❌ Falha no monitoramento: {e}. Alerta: Falha na operação.")
+            logger.error(f"❌ Falha no monitoramento do Twitch: {e}. Alerta: Falha na operação.")
 
     # ========== COMANDOS DE ADMINISTRAÇÃO ========== #
-    @app_commands.command(name="adicionar", description="Adiciona um streamer para monitoramento")
+    @app_commands.command(name="adicionar_twitch", description="Adiciona um streamer da Twitch para monitoramento")
     @app_commands.describe(
-        plataforma="Plataforma do canal (twitch)",
-        nome="Nome do canal da Twitch",
+        nome="Nome de usuário da Twitch",
         usuario="O usuário do Discord a ser vinculado"
     )
-    @app_commands.choices(plataforma=[
-        app_commands.Choice(name="Twitch", value="twitch")
-    ])
-    async def adicionar_streamer(self, interaction: discord.Interaction, plataforma: str, nome: str, usuario: discord.Member):
-        """Adiciona um streamer à lista de monitoramento."""
+    async def adicionar_twitch(self, interaction: discord.Interaction, nome: str, usuario: discord.Member):
+        """Adiciona um streamer da Twitch à lista de monitoramento."""
         try:
             await interaction.response.defer(ephemeral=True)
             data = await get_data()
-            plataforma = plataforma.lower()
 
-            if plataforma != "twitch":
-                return await interaction.edit_original_response(content="❌ Plataforma inválida! Alerta: Falha na operação.")
+            if "twitch" not in data["monitored_users"]:
+                data["monitored_users"]["twitch"] = {}
 
-            if nome.lower() in data["monitored_users"][plataforma]:
+            if nome.lower() in data["monitored_users"]["twitch"]:
                 return await interaction.edit_original_response(
                     content=f"⚠️ {nome} já é um alvo! Alerta: Falha na operação."
                 )
             
-            data["monitored_users"][plataforma][nome.lower()] = {
+            data["monitored_users"]["twitch"][nome.lower()] = {
                 "added_by": usuario.id,
                 "added_at": datetime.now().isoformat(),
                 "guild_id": interaction.guild.id
@@ -94,33 +91,25 @@ class Monitoramento(commands.Cog):
             )
         except Exception as e:
             await interaction.edit_original_response(
-                content=f"❌ Erro ao adicionar alvo: {e}. Alerta: Falha na operação."
+                content=f"❌ Erro ao adicionar alvo do Twitch: {e}. Alerta: Falha na operação."
             )
 
-    @app_commands.command(name="remover", description="Remove um streamer do monitoramento")
+    @app_commands.command(name="remover_twitch", description="Remove um streamer da Twitch do monitoramento")
     @app_commands.describe(
-        plataforma="Plataforma do canal (twitch)",
-        nome="Nome do canal da Twitch"
+        nome="Nome de usuário da Twitch"
     )
-    @app_commands.choices(plataforma=[
-        app_commands.Choice(name="Twitch", value="twitch")
-    ])
-    async def remover_streamer(self, interaction: discord.Interaction, plataforma: str, nome: str):
-        """Remove um streamer da lista de monitoramento."""
+    async def remover_twitch(self, interaction: discord.Interaction, nome: str):
+        """Remove um streamer da Twitch da lista de monitoramento."""
         try:
             await interaction.response.defer(ephemeral=True)
             data = await get_data()
-            plataforma = plataforma.lower()
 
-            if plataforma != "twitch":
-                return await interaction.edit_original_response(content="❌ Plataforma inválida! Alerta: Falha na operação.")
-
-            if nome.lower() not in data["monitored_users"][plataforma]:
+            if "twitch" in data["monitored_users"] and nome.lower() not in data["monitored_users"]["twitch"]:
                 return await interaction.edit_original_response(
                     content=f"⚠️ {nome} não é um alvo! Alerta: Falha na operação."
                 )
 
-            del data["monitored_users"][plataforma][nome.lower()]
+            del data["monitored_users"]["twitch"][nome.lower()]
             await save_data(self.bot.drive_service)
 
             await interaction.edit_original_response(
@@ -128,33 +117,8 @@ class Monitoramento(commands.Cog):
             )
         except Exception as e:
             await interaction.edit_original_response(
-                content=f"❌ Erro ao remover alvo: {e}. Alerta: Falha na operação."
+                content=f"❌ Erro ao remover alvo do Twitch: {e}. Alerta: Falha na operação."
             )
-
-    @app_commands.command(name="listar", description="Mostra a lista de alvos monitorados")
-    async def listar_streamers(self, interaction: discord.Interaction):
-        """Exibe a lista de usuários monitorados."""
-        await interaction.response.defer(ephemeral=True)
-        data = await get_data()
-        
-        output = "🤖 **RELATÓRIO DE ALVOS**\n\n"
-        
-        twitch_output = []
-        for streamer, info in data["monitored_users"]["twitch"].items():
-            member = interaction.guild.get_member(info.get("added_by"))
-            twitch_output.append(
-                f"**Plataforma:** Twitch\n"
-                f"**Nome do canal:** {streamer}\n"
-                f"**Usuário:** {member.mention if member else 'Desconhecido'}\n"
-            )
-
-        if twitch_output:
-            output += "--- Twitch ---\n" + "\n".join(twitch_output) + "\n"
-        else:
-            output += "Nenhum alvo da Twitch encontrado no sistema."
-
-        await interaction.edit_original_response(content=output)
 
 async def setup(bot: commands.Bot):
-    """Função de inicialização do cog."""
     await bot.add_cog(Monitoramento(bot))
