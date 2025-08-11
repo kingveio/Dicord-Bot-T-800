@@ -7,8 +7,8 @@ from typing import Optional, Dict, Any
 logger = logging.getLogger(__name__)
 
 class KickAPI:
-    """Classe para interagir diretamente com a API pública do Kick."""
-    BASE_URL = "https://kick.com/api/v2/channels/"  # URL CORRIGIDA PARA V2
+    """Classe para interagir com a API pública do Kick, usando o fluxo de autenticação."""
+    BASE_URL = "https://kick.com/api/v1/channels/"  # <--- URL CORRIGIDA PARA V1
     TOKEN_URL = "https://id.kick.com/oauth/token"
 
     def __init__(self):
@@ -45,6 +45,7 @@ class KickAPI:
                         
                         self.access_token = token_data.get("access_token")
                         expires_in = token_data.get("expires_in", 3600)
+                        # Define a expiração 60 segundos antes para garantir que o token seja renovado a tempo.
                         self.token_expires_at = asyncio.get_event_loop().time() + expires_in - 60
                         
                         logger.info("✅ Token de acesso da Kick API obtido com sucesso.")
@@ -80,7 +81,8 @@ class KickAPI:
                         logger.warning(f"⚠️ Canal '{username}' não existe no Kick.")
                         return None
                     elif resp.status != 200:
-                        logger.error(f"❌ Erro ao acessar dados do canal '{username}': HTTP {resp.status}")
+                        # Loga a resposta para ajudar na depuração
+                        logger.error(f"❌ Erro ao acessar dados do canal '{username}': HTTP {resp.status} - Resposta: {await resp.text()}")
                         return None
 
                     data = await resp.json()
