@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import logging
 from datetime import datetime
+from data_manager import get_data, save_data
 
 # ========== CONFIGURAÇÃO INICIAL ========== #
 logger = logging.getLogger("T-800")
@@ -21,7 +22,7 @@ class T800Bot(commands.Bot):
             )
         )
         self.start_time = datetime.now()
-        self.live_role = "AO VIVO"
+        self.live_role_name = "AO VIVO"
         self.system_ready = False
         self.synced = False
         self.twitch_api = None
@@ -33,7 +34,7 @@ class T800Bot(commands.Bot):
         await self.load_extension("cogs.monitoramento")
         await self.load_extension("cogs.youtube_monitor")
         
-        # Sincroniza os comandos
+        # Sincroniza os comandos com o Discord
         if not self.synced:
             try:
                 for guild in self.guilds:
@@ -50,3 +51,13 @@ class T800Bot(commands.Bot):
         self.system_ready = True
         
 bot = T800Bot()
+
+# Adiciona os métodos de dados à classe do bot para facilitar o acesso dos cogs
+async def get_data_from_bot():
+    return await get_data()
+
+async def save_data_from_bot():
+    return await save_data(bot.drive_service)
+    
+bot.get_data = get_data_from_bot
+bot.save_data = save_data_from_bot
