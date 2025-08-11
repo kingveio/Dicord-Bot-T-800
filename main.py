@@ -9,7 +9,6 @@ from datetime import datetime
 from flask import Flask, jsonify
 from drive_service import GoogleDriveService
 from twitch_api import TwitchAPI
-from youtube_api import YouTubeAPI
 from data_manager import load_data_from_drive_if_exists, save_data, get_data
 from discord_bot import bot
 
