@@ -13,9 +13,14 @@ class Admin(commands.Cog):
         logger.info("❌ Módulo de administração descarregado.")
 
     @commands.command(name="recarregar")
-    @commands.is_owner()
+    # A linha abaixo foi removida para que o comando possa ser usado por qualquer administrador.
+    # @commands.is_owner()
     async def reload_cog(self, ctx: commands.Context, cog_name: str):
         """Recarrega um módulo do bot."""
+        if not ctx.author.guild_permissions.administrator:
+            await ctx.send("❌ Você não tem permissão para usar este comando. Alerta: Falha na operação.")
+            return
+
         try:
             await self.bot.reload_extension(f"cogs.{cog_name}")
             await ctx.send(f"✅ O módulo `{cog_name}` foi recarregado. Missão concluída.")
