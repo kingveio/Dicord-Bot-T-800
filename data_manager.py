@@ -52,7 +52,6 @@ async def load_from_file(file_path: str) -> bool:
             
         data = json.loads(content)
         
-        # Corrigido: Adiciona validação e atualização do DATA_CACHE aqui
         if validate_data_structure(data):
             async with DATA_LOCK:
                 DATA_CACHE.update(data)
@@ -67,7 +66,7 @@ async def load_from_file(file_path: str) -> bool:
         logger.error(f"Erro ao carregar {file_path}: {e}")
         return False
 
-async def load_data_from_drive_if_exists(drive_service: Optional['GoogleDriveService'] = None) -> None:
+async def load_data_from_drive_if_exists(drive_service: Optional[GoogleDriveService] = None) -> None:
     """Carrega dados do Drive ou arquivo local"""
     global DATA_CACHE
     
@@ -98,7 +97,7 @@ async def load_data_from_drive_if_exists(drive_service: Optional['GoogleDriveSer
         logger.critical(f"Falha crítica ao carregar dados: {e}")
         raise
 
-async def save_data(drive_service: Optional['GoogleDriveService'] = None) -> None:
+async def save_data(drive_service: Optional[GoogleDriveService] = None) -> None:
     """Salva dados localmente e no Drive"""
     try:
         async with DATA_LOCK:
