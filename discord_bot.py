@@ -7,6 +7,8 @@ from typing import Optional, Dict, List
 import os
 import asyncio
 from data_manager import get_data, save_data
+from youtube_api import YouTubeAPI
+from twitch_api import TwitchAPI
 
 # ========== CONFIGURAÇÃO INICIAL ========== #
 # Configuração do logger
@@ -81,7 +83,7 @@ async def check_live_status():
     live_youtube_users = []
     if monitored_users["youtube"]:
         for channel, info in monitored_users["youtube"].items():
-            is_live = await bot.youtube_api.is_channel_live(channel)
+            is_live = await bot.youtube_api.check_live_status(channel)
             if is_live:
                 live_youtube_users.append(channel)
 
@@ -146,7 +148,7 @@ async def add_target(interaction: discord.Interaction, url: str, membro: discord
     platform = "youtube" if "youtube.com" in url or "youtu.be" in url else "twitch"
 
     if platform == "youtube":
-        channel_id = await bot.youtube_api.get_channel_id_from_url(url)
+        channel_id = await bot.youtube_api.get_channel_id(url)
         if not channel_id:
             await interaction.followup.send("❌ Falha na identificação do canal do YouTube. Verifique a URL.")
             return
@@ -158,7 +160,8 @@ async def add_target(interaction: discord.Interaction, url: str, membro: discord
 
     elif platform == "twitch":
         username = url.split('/')[-1]
-        if not await bot.twitch_api.validate_username(username):
+        twitch_user_id = await bot.twitch_api.get_user_id(username)
+        if not twitch_user_id:
             await interaction.followup.send("❌ Falha na identificação do streamer da Twitch. Verifique a URL.")
             return
         
@@ -200,12 +203,23 @@ async def list_targets(interaction: discord.Interaction):
 
     await interaction.edit_original_response(content=output)
 
-@bot.tree.command(name="teste_live", description="Testa a verificação de live do YouTube com um ID.")
-@app_commands.describe(channel_id="ID do canal do YouTube")
-async def test_live(interaction: discord.Interaction, channel_id: str):
+@bot.tree.command(name="remover", description="Remove um canal ou streamer do monitoramento.")
+@app_commands.describe(nome="Nome do canal ou streamer a ser removido (ex: 'alanzoka', 'UC...', etc.)")
+async def remover_target(interaction: discord.Interaction, nome: str):
     await interaction.response.defer(ephemeral=True)
-    is_live = await bot.youtube_api.is_channel_live(channel_id)
-    if is_live:
-        await interaction.followup.send(f"✅ O canal com ID {channel_id} está ao vivo!")
+    data = await get_data()
+    twitch_targets = data["monitored_users"]["twitch"]
+    youtube_targets = data["monitored_users"]["youtube"]
+
+    nome_lower = nome.lower()
+    
+    if nome_lower in twitch_targets:
+        del twitch_targets[nome_lower]
+        await save_data(bot.drive_service)
+        await interaction.followup.send(f"✅ Streamer '{nome}' removido do monitoramento da Twitch.")
+    elif nome in youtube_targets:
+        del youtube_targets[nome]
+        await save_data(bot.drive_service)
+        await interaction.followup.send(f"✅ Canal com ID '{nome}' removido do monitoramento do YouTube.")
     else:
-        await interaction.followup.send(f"❌ O canal com ID {channel_id} não está ao vivo.")
+        await interaction.followup.send(f"❌ Não foi possível encontrar o alvo '{nome}' no sistema.")
