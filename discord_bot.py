@@ -1,7 +1,11 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
+from discord import app_commands
 import logging
 from datetime import datetime
+from typing import Dict, Any, List
+import os
+import asyncio
 from data_manager import get_data, save_data
 
 # ========== CONFIGURAÇÃO INICIAL ========== #
@@ -21,49 +25,47 @@ class T800Bot(commands.Bot):
                 name="análise de alvos humanos"
             )
         )
-        self.owner_id = 659611103399116800 # <-- Substitua este ID pelo seu
         self.start_time = datetime.now()
-        self.live_role_name = "AO VIVO"
+        self.live_role = "AO VIVO"
         self.system_ready = False
         self.synced = False
-        self.twitch_api = None
+        self.twitch_api = None # Mantemos a referência aqui, mas a inicialização será no main.py
         self.youtube_api = None
-        self.drive_service = None
-
-    async def setup_hook(self):
-        """Carrega os cogs e sincroniza os comandos após o bot estar pronto."""
-        # Carrega os cogs
-        cogs_to_load = ["cogs.monitoramento", "cogs.youtube_monitor", "cogs.admin"] # <-- 'cogs.admin' adicionado
-        for cog in cogs_to_load:
-            try:
-                await self.load_extension(cog)
-                logger.info(f"✅ Cog '{cog}' carregado com sucesso.")
-            except Exception as e:
-                logger.error(f"❌ Falha ao carregar o cog '{cog}': {e}")
-        
-        # Sincroniza os comandos com o Discord
-        if not self.synced:
-            try:
-                synced_commands = await self.tree.sync()
-                self.synced = True
-                logger.info(f"✅ Missão: {len(synced_commands)} comandos sincronizados globalmente com sucesso!")
-            except Exception as e:
-                logger.error(f"❌ Falha ao sincronizar comandos globalmente: {e}")
-
-    @commands.Cog.listener()
+    
     async def on_ready(self):
         """Evento quando o bot está pronto para uso."""
-        logger.info("✅ Sistema online e pronto para operar.")
-        self.system_ready = True
+        if not self.synced:
+            try:
+                await self.tree.sync()
+                for guild in self.guilds:
+                    await self.tree.sync(guild=guild)
+                self.synced = True
+                logger.info("✅ Missão: Comandos sincronizados com sucesso!")
+            except Exception as e:
+                logger.error(f"❌ Falha ao sincronizar comandos: {e}")
+
+        # Carrega os cogs
+        try:
+            await self.load_extension("cogs.twitch_monitor")
+            await self.load_extension("cogs.youtube_monitor")
+            self.system_ready = True
+            logger.info("✅ Módulos de monitoramento carregados. Sistema online!")
+        except Exception as e:
+            logger.error(f"❌ Falha ao carregar cogs: {e}")
+
+        logger.info(f"✅ Sistema online e pronto para uso como {self.user.name} ({self.user.id}).")
         
+        # Inicia a tarefa de monitoramento de status
+        self.monitor_twitch_and_youtube.start()
+
+    @tasks.loop(minutes=5)
+    async def monitor_twitch_and_youtube(self):
+        """Esta tarefa será usada apenas para monitorar e não para lógica de API"""
+        if not self.system_ready:
+            return
+
+        # Chamadas para os métodos de monitoramento dos cogs
+        await self.get_cog('TwitchMonitor').monitor_twitch_streams()
+        await self.get_cog('YouTubeMonitor').monitor_youtube_streams()
+
 bot = T800Bot()
-
-# Adiciona os métodos de dados à classe do bot para facilitar o acesso dos cogs
-async def get_data_from_bot():
-    return await get_data()
-
-async def save_data_from_bot():
-    return await save_data(bot.drive_service)
-    
-bot.get_data = get_data_from_bot
-bot.save_data = save_data_from_bot
