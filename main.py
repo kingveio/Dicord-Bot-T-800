@@ -9,7 +9,7 @@ from datetime import datetime
 from flask import Flask, jsonify
 from drive_service import GoogleDriveService
 from twitch_api import TwitchAPI
-from youtube_api import YouTubeAPI  # Importa a nova API do YouTube
+from youtube_api import YouTubeAPI
 from data_manager import load_data_from_drive_if_exists, save_data, get_data
 from discord_bot import bot
 
@@ -38,7 +38,7 @@ configure_logging()
 
 REQUIRED_ENV = [
     "DISCORD_TOKEN", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET",
-    "YOUTUBE_API_KEY",  # Chave da API do YouTube adicionada
+    "YOUTUBE_API_KEY",
     "DRIVE_FOLDER_ID", "DRIVE_PRIVATE_KEY_ID", "DRIVE_PRIVATE_KEY",
     "DRIVE_CLIENT_ID"
 ]
@@ -56,7 +56,6 @@ def home():
     hours, remainder = divmod(uptime.total_seconds(), 3600)
     minutes, seconds = divmod(remainder, 60)
     
-    # Adiciona a verificação de bot.user
     bot_name = bot.user.name if bot.user else "Bot não conectado"
     bot_id = str(bot.user.id) if bot.user else "N/A"
     
@@ -84,7 +83,7 @@ async def initialize_data():
                 "streamers": {},
                 "monitored_users": {
                     "twitch": {},
-                    "youtube": {}  # Chave do YouTube adicionada
+                    "youtube": {}
                 }
             }, f, indent=2)
         logger.info("Novo arquivo de dados criado")
