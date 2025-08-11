@@ -36,18 +36,18 @@ class T800Bot(commands.Bot):
         """Evento quando o bot está pronto para uso."""
         if not self.synced:
             try:
-                # Otimiza a sincronização de comandos para uma guilda específica para evitar problemas de cache.
-                # Use o ID do seu servidor.
-                guild_id = int(os.environ.get("GUILD_ID", 0))
-                if guild_id:
+                # Sincroniza os comandos a partir da variável de ambiente GUILD_ID no Render
+                guild_id_str = os.environ.get("GUILD_ID")
+                if guild_id_str:
+                    guild_id = int(guild_id_str)
                     guild = discord.Object(id=guild_id)
                     await self.tree.sync(guild=guild)
                     self.synced = True
-                    logger.info("✅ Missão: Comandos sincronizados com sucesso na guilda específica!")
+                    logger.info("✅ Missão: Comandos sincronizados com sucesso na guilda especificada pela variável de ambiente!")
                 else:
                     await self.tree.sync()
                     self.synced = True
-                    logger.info("✅ Missão: Comandos sincronizados globalmente (sem ID da guilda).")
+                    logger.warning("⚠️ Variável de ambiente GUILD_ID não encontrada. Sincronizando comandos globalmente.")
 
             except Exception as e:
                 logger.error(f"❌ Falha ao sincronizar comandos: {e}")
