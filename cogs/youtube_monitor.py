@@ -31,12 +31,13 @@ class YouTubeMonitor(commands.Cog):
                 logger.error("⚠️ Dados não carregados corretamente! Alerta: Falha na operação.")
                 return
 
-            if "youtube" in data["monitored_users"] and data["monitored_users"]["youtube"]:
-                channels_to_check = list(data["monitored_users"]["youtube"].keys())
+            monitored_yt = data["monitored_users"].get("youtube", {})
+            if monitored_yt:
+                channels_to_check = list(monitored_yt.keys())
                 live_status = await self.bot.youtube_api.check_live_channels(channels_to_check)
 
                 for channel_name, is_live in live_status.items():
-                    user_info = data["monitored_users"]["youtube"].get(channel_name.lower())
+                    user_info = monitored_yt.get(channel_name.lower())
                     if not user_info: continue
 
                     guild = self.bot.get_guild(user_info.get("guild_id"))
