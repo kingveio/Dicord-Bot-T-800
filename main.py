@@ -32,9 +32,9 @@ async def initialize_apis(bot):
         else:
             logger.error("❌ TWITCH_CLIENT_ID ou TWITCH_CLIENT_SECRET não definidos.")
             
-        # Inicialização da Kick API
-        bot.kick_api = KickAPI()
-        logger.info("✅ Kick API inicializada com sucesso.")
+        # Inicialização da Kick API (DESATIVADA TEMPORARIAMENTE)
+        # bot.kick_api = KickAPI()
+        # logger.info("✅ Kick API inicializada com sucesso.")
 
         # Inicialização do Google Drive API
         bot.drive_service = GoogleDriveService()
@@ -50,4 +50,4 @@ if __name__ == "__main__":
     async def setup_hook():
         await initialize_apis(discord_bot)
     discord_bot.setup_hook = setup_hook
-    discord_bot.run(os.getenv("DISCORD_TOKEN"))
+    discord_bot.run(os.getenv("DISCORD_BOT_TOKEN"))
