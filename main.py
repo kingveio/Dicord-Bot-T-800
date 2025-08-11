@@ -112,11 +112,7 @@ async def main_async():
                 os.environ["TWITCH_CLIENT_ID"],
                 os.environ["TWITCH_CLIENT_SECRET"]
             )
-            bot.youtube_api = YouTubeAPI(
-                session,
-                os.environ["YOUTUBE_API_KEY"]
-            )
-            
+                       
             # Inicializa sistema de dados
             bot.drive_service = await initialize_data()
             
