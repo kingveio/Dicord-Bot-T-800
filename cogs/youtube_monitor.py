@@ -21,7 +21,8 @@ class YouTubeMonitor(commands.Cog):
     @tasks.loop(minutes=5)
     async def monitor_youtube_streams(self):
         """Verifica periodicamente os canais do YouTube monitorados."""
-        if not self.bot.system_ready:
+        # Adiciona verificação para garantir que a API do YouTube está pronta
+        if not self.bot.system_ready or not self.bot.youtube_api:
             return
 
         logger.info("🔍 Análise de alvos YouTube iniciada...")
