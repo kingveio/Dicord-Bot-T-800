@@ -3,10 +3,10 @@ from discord.ext import commands, tasks
 from discord import app_commands
 import logging
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any
 import os
 import asyncio
-from data_manager import get_data, save_data
+from data_manager import get_data as dm_get_data, save_data as dm_save_data
 
 # ========== CONFIGURAÇÃO INICIAL ========== #
 logger = logging.getLogger("T-800")
@@ -29,9 +29,9 @@ class T800Bot(commands.Bot):
         self.live_role = "AO VIVO"
         self.system_ready = False
         self.synced = False
-        self.twitch_api = None # Mantemos a referência aqui, mas a inicialização será no main.py
+        self.twitch_api = None
         self.youtube_api = None
-    
+
     async def on_ready(self):
         """Evento quando o bot está pronto para uso."""
         if not self.synced:
@@ -54,18 +54,16 @@ class T800Bot(commands.Bot):
             logger.error(f"❌ Falha ao carregar cogs: {e}")
 
         logger.info(f"✅ Sistema online e pronto para uso como {self.user.name} ({self.user.id}).")
-        
-        # Inicia a tarefa de monitoramento de status
-        self.monitor_twitch_and_youtube.start()
+    
+    async def get_data(self) -> Dict[str, Any]:
+        """Retorna os dados do cache de dados."""
+        return await dm_get_data()
 
-    @tasks.loop(minutes=5)
-    async def monitor_twitch_and_youtube(self):
-        """Esta tarefa será usada apenas para monitorar e não para lógica de API"""
-        if not self.system_ready:
-            return
-
-        # Chamadas para os métodos de monitoramento dos cogs
-        await self.get_cog('TwitchMonitor').monitor_twitch_streams()
-        await self.get_cog('YouTubeMonitor').monitor_youtube_streams()
+    async def save_data(self) -> None:
+        """Salva os dados no arquivo e no Google Drive."""
+        await dm_save_data(self.drive_service)
 
 bot = T800Bot()
+
+# Nota: As tarefas de monitoramento (tasks.loop) agora estão dentro dos cogs para evitar este tipo de erro.
+# O cog é carregado em on_ready e o loop é iniciado dentro do próprio cog.
