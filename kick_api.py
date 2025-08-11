@@ -7,10 +7,9 @@ logger = logging.getLogger(__name__)
 
 class KickAPI:
     BASE_URL = "https://kick.com/api/v2/channels/"
-    TOKEN_URL = "https://kick.com/api/v1/oauth/token"
+    TOKEN_URL = "https://id.kick.com/oauth/token"  # <-- URL CORRIGIDA
     
     def __init__(self):
-        # Obtém as credenciais das variáveis de ambiente.
         self.client_id = os.getenv("KICK_CLIENT_ID")
         self.client_secret = os.getenv("KICK_CLIENT_SECRET")
         
@@ -27,7 +26,6 @@ class KickAPI:
             logger.error("❌ KICK_CLIENT_ID ou KICK_CLIENT_SECRET não estão configurados.")
             return None
 
-        # Usando 'application/x-www-form-urlencoded' como Content-Type
         headers = {
             "Content-Type": "application/x-www-form-urlencoded"
         }
@@ -38,7 +36,6 @@ class KickAPI:
         }
 
         try:
-            # Envia a requisição com dados de formulário
             response = await self.client.post(self.TOKEN_URL, data=data, headers=headers)
             response.raise_for_status()
             token_data = response.json()
@@ -51,6 +48,7 @@ class KickAPI:
             return self.access_token
         except httpx.HTTPStatusError as e:
             logger.error(f"❌ Erro ao obter token de acesso: HTTP {e.response.status_code}")
+            logger.error(f"Resposta do servidor: {e.response.text}")
             return None
         except Exception as e:
             logger.error(f"❌ Erro inesperado ao obter token de acesso: {e}")
