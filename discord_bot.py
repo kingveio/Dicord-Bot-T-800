@@ -31,7 +31,6 @@ class T800Bot(commands.Bot):
         self.start_time = datetime.now()
         self.live_role = "AO VIVO"
         self.system_ready = False
-        self.synced = False
         self.twitch_api = None
         self.youtube_api = None
         self.drive_service = None
@@ -40,15 +39,13 @@ class T800Bot(commands.Bot):
     @commands.Cog.listener()
     async def on_ready(self):
         """Evento quando o bot está pronto para uso."""
-        if not self.synced:
-            try:
-                await self.tree.sync()
-                for guild in self.guilds:
-                    await self.tree.sync(guild=guild)
-                self.synced = True
-                logger.info("✅ Missão: Comandos sincronizados com sucesso!")
-            except Exception as e:
-                logger.error(f"❌ Falha ao sincronizar comandos: {e}")
+        try:
+            # Sincroniza os comandos a cada inicialização para garantir que estejam atualizados.
+            # Em produção, você pode usar uma flag ou um comando manual para sincronizar.
+            await self.tree.sync()
+            logger.info("✅ Missão: Comandos sincronizados com sucesso!")
+        except Exception as e:
+            logger.error(f"❌ Falha ao sincronizar comandos: {e}")
         
         self.system_ready = True
         self.check_live_status.start()
@@ -82,7 +79,6 @@ class T800Bot(commands.Bot):
         live_youtube_users = []
         if monitored_users["youtube"]:
             for channel, info in monitored_users["youtube"].items():
-                # A linha abaixo foi corrigida para usar o novo nome da função.
                 is_live = await self.youtube_api.is_channel_live(channel)
                 if is_live:
                     live_youtube_users.append(channel)
@@ -90,7 +86,6 @@ class T800Bot(commands.Bot):
         for guild in self.guilds:
             await self.update_live_roles(guild, live_twitch_users, live_youtube_users)
 
-        # Salva dados após o monitoramento para garantir que estejam atualizados
         await save_data(self.drive_service)
         logger.info("✅ Ciclo de monitoramento concluído.")
 
@@ -203,7 +198,6 @@ class T800Bot(commands.Bot):
 
         await interaction.edit_original_response(content=output)
 
-    # Adiciona um comando de teste para exemplificar o uso
     @app_commands.command(name="teste_live", description="Testa a verificação de live do YouTube com um ID.")
     @app_commands.describe(channel_id="ID do canal do YouTube")
     async def test_live(self, interaction: discord.Interaction, channel_id: str):
@@ -213,12 +207,3 @@ class T800Bot(commands.Bot):
             await interaction.followup.send(f"✅ O canal com ID {channel_id} está ao vivo!")
         else:
             await interaction.followup.send(f"❌ O canal com ID {channel_id} não está ao vivo.")
-
-# Inicialização do Bot
-bot = T800Bot()
-
-# ========== INICIALIZAÇÃO DOS COMANDOS ========== #
-bot.tree.add_command(bot.status)
-bot.tree.add_command(bot.add_target)
-bot.tree.add_command(bot.list_targets)
-bot.tree.add_command(bot.test_live)
