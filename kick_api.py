@@ -10,6 +10,7 @@ class KickAPI:
     TOKEN_URL = "https://kick.com/api/v1/oauth/token"
     
     def __init__(self):
+        # Obtém as credenciais das variáveis de ambiente.
         self.client_id = os.getenv("KICK_CLIENT_ID")
         self.client_secret = os.getenv("KICK_CLIENT_SECRET")
         
@@ -26,8 +27,9 @@ class KickAPI:
             logger.error("❌ KICK_CLIENT_ID ou KICK_CLIENT_SECRET não estão configurados.")
             return None
 
+        # Usando 'application/x-www-form-urlencoded' como Content-Type
         headers = {
-            "Content-Type": "application/json"
+            "Content-Type": "application/x-www-form-urlencoded"
         }
         data = {
             "client_id": self.client_id,
@@ -36,7 +38,8 @@ class KickAPI:
         }
 
         try:
-            response = await self.client.post(self.TOKEN_URL, json=data, headers=headers)
+            # Envia a requisição com dados de formulário
+            response = await self.client.post(self.TOKEN_URL, data=data, headers=headers)
             response.raise_for_status()
             token_data = response.json()
             
