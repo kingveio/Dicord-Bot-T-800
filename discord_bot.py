@@ -32,7 +32,7 @@ class T800Bot(commands.Bot):
     async def setup_hook(self):
         """Carrega os cogs e sincroniza os comandos após o bot estar pronto."""
         # Carrega os cogs
-        cogs_to_load = ["cogs.monitoramento", "cogs.youtube_monitor"]
+        cogs_to_load = ["cogs.monitoramento", "cogs.youtube_monitor", "cogs.admin"] # <-- 'cogs.admin' adicionado
         for cog in cogs_to_load:
             try:
                 await self.load_extension(cog)
@@ -43,7 +43,6 @@ class T800Bot(commands.Bot):
         # Sincroniza os comandos com o Discord
         if not self.synced:
             try:
-                # Sincroniza globalmente
                 synced_commands = await self.tree.sync()
                 self.synced = True
                 logger.info(f"✅ Missão: {len(synced_commands)} comandos sincronizados globalmente com sucesso!")
@@ -56,36 +55,6 @@ class T800Bot(commands.Bot):
         logger.info("✅ Sistema online e pronto para operar.")
         self.system_ready = True
         
-    # Comandos para carregar/recarregar/descarregar cogs
-    @commands.command(name="carregar", help="Carrega uma extensão (cog).")
-    @commands.is_owner()
-    async def load_cog(self, ctx, extension: str):
-        try:
-            await self.load_extension(f"cogs.{extension}")
-            await ctx.send(f"✅ Cog '{extension}' carregado com sucesso.")
-        except commands.ExtensionError as e:
-            await ctx.send(f"❌ Erro ao carregar o cog '{extension}': {e}")
-
-    @commands.command(name="descarregar", help="Descarrega uma extensão (cog).")
-    @commands.is_owner()
-    async def unload_cog(self, ctx, extension: str):
-        try:
-            await self.unload_extension(f"cogs.{extension}")
-            await ctx.send(f"✅ Cog '{extension}' descarregado com sucesso.")
-        except commands.ExtensionError as e:
-            await ctx.send(f"❌ Erro ao descarregar o cog '{extension}': {e}")
-
-    @commands.command(name="recarregar", help="Recarrega uma extensão (cog).")
-    @commands.is_owner()
-    async def reload_cog(self, ctx, extension: str):
-        try:
-            await self.reload_extension(f"cogs.{extension}")
-            await ctx.send(f"✅ Cog '{extension}' recarregado com sucesso.")
-            await self.tree.sync() # Sincroniza os comandos após recarregar
-            await ctx.send("✅ Comandos de slash sincronizados.")
-        except commands.ExtensionError as e:
-            await ctx.send(f"❌ Erro ao recarregar o cog '{extension}': {e}")
-
 bot = T800Bot()
 
 # Adiciona os métodos de dados à classe do bot para facilitar o acesso dos cogs
