@@ -1,11 +1,10 @@
 import os
 import io
-import json
 import logging
 from typing import Optional, Dict, Any
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
+from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 from googleapiclient.errors import HttpError
 
 logger = logging.getLogger(__name__)
@@ -17,114 +16,95 @@ class GoogleDriveService:
         self.service = self._authenticate()
         self.timeout = 30
 
-    def _get_service_account_info(self) -> Optional[Dict[str, Any]]:
-        try:
-            private_key = os.environ["DRIVE_PRIVATE_KEY"]
-            if '\\n' in private_key:
-                private_key = private_key.replace('\\n', '\n')
-            
-            return {
-                "type": "service_account",
-                "project_id": os.environ.get("DRIVE_PROJECT_ID", "bot-t-800"),
-                "private_key_id": os.environ["DRIVE_PRIVATE_KEY_ID"],
-                "private_key": private_key,
-                "client_email": os.environ["DRIVE_CLIENT_EMAIL"],
-                "client_id": os.environ["DRIVE_CLIENT_ID"],
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-                "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{os.environ['DRIVE_CLIENT_EMAIL']}"
-            }
-        except KeyError as e:
-            logger.error(f"Variável de ambiente ausente: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"Erro ao processar credenciais: {e}")
-            return None
+    def _get_service_account_info(self) -> Dict[str, Any]:
+        private_key = os.environ["DRIVE_PRIVATE_KEY"]
+        
+        if '\\n' in private_key:
+            private_key = private_key.replace('\\n', '\n')
+        elif not private_key.startswith('-----BEGIN PRIVATE KEY-----'):
+            private_key = '-----BEGIN PRIVATE KEY-----\n' + private_key + '\n-----END PRIVATE KEY-----'
+        
+        return {
+            "type": "service_account",
+            "project_id": os.environ.get("DRIVE_PROJECT_ID", "bot-t-800"),
+            "private_key_id": os.environ["DRIVE_PRIVATE_KEY_ID"],
+            "private_key": private_key,
+            "client_email": os.environ.get("DRIVE_CLIENT_EMAIL", "discord-bot-t-800@bot-t-800.iam.gserviceaccount.com"),
+            "client_id": os.environ["DRIVE_CLIENT_ID"],
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{os.environ.get('DRIVE_CLIENT_EMAIL', 'discord-bot-t-800@bot-t-800.iam.gserviceaccount.com')}"
+        }
 
     def _authenticate(self):
-        if not self.service_account_info:
-            return None
-        try:
-            creds = service_account.Credentials.from_service_account_info(
-                self.service_account_info, scopes=self.SCOPES
-            )
-            logger.info("✅ Autenticação com Google Drive bem-sucedida.")
-            return build('drive', 'v3', credentials=creds, cache_discovery=False, static_discovery=False)
-        except Exception as e:
-            logger.error(f"❌ Erro na autenticação do Google Drive: {e}")
-            return None
+        creds = service_account.Credentials.from_service_account_info(
+            self.service_account_info, scopes=self.SCOPES
+        )
+        return build('drive', 'v3', credentials=creds, cache_discovery=False, static_discovery=False)
 
-    def find_file_id(self, file_name: str) -> Optional[str]:
-        if not self.service: return None
+    def find_file(self, file_name: str) -> Optional[Dict[str, Any]]:
         try:
             query = f"name='{file_name}' and trashed=false and '{os.environ['DRIVE_FOLDER_ID']}' in parents"
             results = self.service.files().list(
                 q=query,
                 spaces='drive',
-                fields='files(id)',
+                fields='files(id, name)',
                 pageSize=1
             ).execute()
             files = results.get('files', [])
-            return files[0]['id'] if files else None
+            return files[0] if files else None
         except HttpError as e:
-            logger.error(f"Erro ao buscar ID do arquivo: {e}")
+            logger.error(f"Erro ao buscar arquivo: {e}")
             return None
 
-    async def download_file_to_memory(self, file_name: str) -> Optional[Dict[str, Any]]:
-        file_id = self.find_file_id(file_name)
-        if not file_id:
-            logger.warning(f"Arquivo '{file_name}' não encontrado no Drive")
-            return None
-        
+    def download_file(self, file_name: str, local_path: str) -> bool:
         try:
-            request = self.service.files().get_media(fileId=file_id)
-            fh = io.BytesIO()
+            file_info = self.find_file(file_name)
+            if not file_info:
+                logger.warning(f"Arquivo {file_name} não encontrado no Drive")
+                return False
+
+            request = self.service.files().get_media(fileId=file_info['id'])
+            fh = io.FileIO(local_path, 'wb')
             downloader = MediaIoBaseDownload(fh, request)
             
             done = False
             while not done:
-                status, done = downloader.next_chunk()
+                _, done = downloader.next_chunk()
             
-            fh.seek(0)
-            data = json.load(fh)
-            return data
+            logger.info(f"Arquivo {file_name} baixado com sucesso")
+            return True
         except HttpError as e:
-            logger.error(f"Erro HTTP ao baixar arquivo: {e}")
-            return None
+            logger.error(f"Erro HTTP ao baixar: {e}")
+            return False
         except Exception as e:
-            logger.error(f"Erro ao baixar e processar arquivo: {e}")
-            return None
+            logger.error(f"Erro ao baixar arquivo: {e}")
+            return False
 
-    async def upload_file_from_memory(self, content: str, file_name: str) -> bool:
-        if not self.service: return False
-        
+    def upload_file(self, file_path: str, file_name: str) -> bool:
         try:
-            file_id = self.find_file_id(file_name)
-            media = MediaIoBaseUpload(io.BytesIO(content.encode()), mimetype='application/json', resumable=True)
+            file_metadata = {
+                'name': file_name,
+                'parents': [os.environ['DRIVE_FOLDER_ID']]
+            }
+            media = MediaFileUpload(file_path, resumable=True)
             
-            if file_id:
-                # Atualiza arquivo existente
+            existing = self.find_file(file_name)
+            if existing:
                 self.service.files().update(
-                    fileId=file_id,
+                    fileId=existing['id'],
                     media_body=media
                 ).execute()
             else:
-                # Cria novo arquivo
-                file_metadata = {
-                    'name': file_name,
-                    'parents': [os.environ['DRIVE_FOLDER_ID']]
-                }
                 self.service.files().create(
                     body=file_metadata,
                     media_body=media,
                     fields='id'
                 ).execute()
             
+            logger.info(f"Arquivo {file_name} enviado com sucesso")
             return True
-        except HttpError as e:
-            logger.error(f"Erro HTTP ao fazer upload: {e}")
-            return False
         except Exception as e:
-            logger.error(f"Erro ao fazer upload do arquivo: {e}")
+            logger.error(f"Erro ao enviar arquivo: {e}")
             return False
