@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 class KickAPI:
     """Classe para interagir com a API pública do Kick, usando o fluxo de autenticação."""
-    BASE_URL = "https://kick.com/api/v1/channels/"
+    BASE_URL = "https://api.kick.com/public/v1/channels/"  # <--- URL CORRIGIDA
     TOKEN_URL = "https://id.kick.com/oauth/token"
 
     def __init__(self):
