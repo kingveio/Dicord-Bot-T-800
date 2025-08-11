@@ -42,6 +42,9 @@ class GoogleDriveService:
         )
         return build('drive', 'v3', credentials=creds, cache_discovery=False, static_discovery=False)
 
+    def is_authenticated(self):
+        return self.service is not None
+
     def find_file(self, file_name: str) -> Optional[Dict[str, Any]]:
         try:
             query = f"name='{file_name}' and trashed=false and '{os.environ['DRIVE_FOLDER_ID']}' in parents"
