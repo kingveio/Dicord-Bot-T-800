@@ -67,10 +67,21 @@ async def main_async():
                 os.environ["YOUTUBE_API_KEY"]
             )
             
-            # Inicializa Drive Service e dados
+            # Inicializa Drive Service e carrega os dados usando a função load_data.
             bot.drive_service = GoogleDriveService()
             await load_data(bot.drive_service)
             
+            # Cria a aplicação Flask
+            app = Flask(__name__)
+
+            @app.route("/")
+            def status():
+                return jsonify(
+                    status="online",
+                    bot_name="T-800",
+                    start_time=bot.start_time.strftime("%Y-%m-%d %H:%M:%S")
+                )
+
             # Inicia servidor web em um thread separado
             threading.Thread(
                 target=lambda: app.run(
