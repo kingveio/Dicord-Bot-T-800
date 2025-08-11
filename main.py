@@ -1,54 +1,121 @@
 import os
-import aiohttp
-import asyncio
+import sys
 import threading
+import asyncio
 import logging
+import aiohttp
+import json
+from datetime import datetime
 from flask import Flask, jsonify
-from dotenv import load_dotenv
-
+from drive_service import GoogleDriveService  # Corrigido: Importando GoogleDriveService
 from twitch_api import TwitchAPI
-from drive_service import DriveService
-from data_manager import initialize_data
+from youtube_api import YouTubeAPI
+from data_manager import load_data_from_drive_if_exists, save_data, get_data
 from discord_bot import bot
 
-# Carrega variáveis de ambiente
-load_dotenv()
+# Configuração do logger antes de qualquer uso
+logger = logging.getLogger("T-800")
 
-# Configuração de logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
+def configure_logging():
+    """Configura o sistema de logging"""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s | %(levelname)s | T-800 | %(message)s",
+        handlers=[
+            logging.FileHandler("t800_system.log"),
+            logging.StreamHandler()
+        ]
+    )
+
+# Configuração T-800
+os.environ.setdefault('DISABLE_VOICE', 'true')
+print("╔════════════════════════════════════════════╗")
+print("║        SISTEMA T-800 INICIALIZANDO         ║")
+print("║    Versão 2.0 - Monitoramento Ativo        ║")
+print("╚════════════════════════════════════════════╝")
+
+configure_logging()
 
 REQUIRED_ENV = [
-    "DISCORD_TOKEN",
-    "TWITCH_CLIENT_ID",
-    "TWITCH_CLIENT_SECRET"
+    "DISCORD_TOKEN", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET",
+    "DRIVE_FOLDER_ID", "DRIVE_PRIVATE_KEY_ID", "DRIVE_PRIVATE_KEY",
+    "DRIVE_CLIENT_ID", "YOUTUBE_API_KEY"
 ]
 
-# Servidor Flask para health check
-app = Flask(__name__)
-@app.route("/")
-def health_check():
-    """Endpoint de health check."""
-    return jsonify({"status": "healthy", "message": "Bot is running"})
+if missing := [var for var in REQUIRED_ENV if var not in os.environ]:
+    logger.critical(f"FALHA DE INICIALIZAÇÃO: Variáveis ausentes - {missing}")
+    sys.exit(1)
 
+from flask import Flask, jsonify
+
+app = Flask(__name__)
+
+@app.route('/ping')
+def ping():
+    return jsonify({'status': 'online'})
+START_TIME = datetime.now()
+
+@app.route('/status')
+def system_status():
+    return jsonify({
+        "status": "operacional",
+        "uptime": str(datetime.now() - START_TIME),
+        "mission": "monitorar_streams"
+    })
+
+async def initialize_data():
+    """Inicializa o sistema de dados com fallbacks robustos"""
+    try:
+        drive_service = GoogleDriveService()
+        
+        # Verifica se o serviço do Drive está funcional
+        if not hasattr(drive_service, 'download_file'):
+            raise AttributeError("Serviço do Google Drive incompleto")
+        
+        await load_data_from_drive_if_exists(drive_service)
+        return drive_service
+        
+    except Exception as e:
+        logger.error(f"Falha ao inicializar Google Drive: {e}")
+        
+        # Fallback para arquivo local
+        if os.path.exists("streamers.json"):
+            try:
+                with open("streamers.json", 'r') as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        await save_data()
+                        logger.info("Dados carregados do arquivo local")
+            except Exception as e:
+                logger.error(f"Erro ao ler arquivo local: {e}")
+        
+        # Cria nova estrutura se necessário
+        if not os.path.exists("streamers.json"):
+            with open("streamers.json", 'w') as f:
+                json.dump({
+                    "streamers": {},
+                    "youtube_channels": {},
+                    "monitored_users": {
+                        "twitch": {},
+                        "youtube": {}
+                    }
+                }, f, indent=2)
+            logger.info("Novo arquivo de dados criado")
+        
+        return None
 
 async def main_async():
-    """Função principal assíncrona que inicializa e executa o bot."""
     try:
-        # Verifica variáveis de ambiente
-        missing_vars = [var for var in REQUIRED_ENV if not os.getenv(var)]
-        if missing_vars:
-            raise ValueError(f"❌ Variáveis de ambiente faltando: {', '.join(missing_vars)}")
-
         async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
             # Inicializa APIs
             bot.twitch_api = TwitchAPI(
                 session,
                 os.environ["TWITCH_CLIENT_ID"],
                 os.environ["TWITCH_CLIENT_SECRET"]
+            )
+            bot.youtube_api = YouTubeAPI(
+                session,
+                os.environ["YOUTUBE_API_KEY"]
             )
             
             # Inicializa sistema de dados
@@ -71,14 +138,11 @@ async def main_async():
         logger.critical(f"FALHA CATASTRÓFICA: {str(e)}")
         raise
 
-
-def main():
-    """Função de entrada do programa."""
+if __name__ == '__main__':
     try:
         asyncio.run(main_async())
     except KeyboardInterrupt:
-        logger.info("Programa encerrado pelo usuário.")
-
-
-if __name__ == "__main__":
-    main()
+        logger.info("Missão interrompida pelo usuário")
+    except Exception as e:
+        logger.error(f"ERRO: {str(e)}")
+        sys.exit(1)
