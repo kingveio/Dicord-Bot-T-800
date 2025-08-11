@@ -1,92 +1,122 @@
+import os
 import json
+import asyncio
 import logging
-from typing import Dict, Any
-from googleapiclient.errors import HttpError
+from typing import Dict, Any, Optional
+from drive_service import GoogleDriveService # Corrigido: Importação absoluta e nome correto da classe
 
-from .drive_service import DriveService
-
+# Configuração do logger
 logger = logging.getLogger(__name__)
 
+# Fallback para aiofiles
+try:
+    import aiofiles
+    USE_AIOFILES = True
+except ImportError:
+    USE_AIOFILES = False
+    logger.warning("aiofiles não disponível - usando operações síncronas")
+
+# Estrutura de dados global
 DATA_CACHE: Dict[str, Any] = {
     "streamers": {},
+    "youtube_channels": {},
     "monitored_users": {
-        "twitch": {}
+        "twitch": {},
+        "youtube": {}
     }
 }
-DATA_FILE_NAME = "streamers.json"
-
+DATA_LOCK = asyncio.Lock()
+DATA_FILE = "streamers.json"
 
 def validate_data_structure(data: Dict[str, Any]) -> bool:
-    """Valida a estrutura básica dos dados."""
+    """Valida a estrutura básica dos dados"""
     try:
-        required_keys = ["streamers", "monitored_users"]
+        required_keys = ["streamers", "youtube_channels", "monitored_users"]
         return all(k in data for k in required_keys)
     except Exception:
         return False
 
-
-async def get_data(drive_service: DriveService = None) -> Dict[str, Any]:
-    """Tenta carregar os dados do arquivo ou do Google Drive, se disponível."""
-    global DATA_CACHE
+async def load_from_file(file_path: str) -> bool:
+    """Carrega dados de um arquivo local"""
     try:
-        if drive_service and drive_service.is_authenticated():
-            file_id = await drive_service.find_file(DATA_FILE_NAME)
-            if file_id:
-                content = await drive_service.download_file(file_id)
-                DATA_CACHE = json.loads(content)
-                logger.info("✅ Dados carregados do Google Drive. Missão concluída.")
-            else:
-                logger.info("⚠️ Arquivo de dados não encontrado no Google Drive. Criando um novo.")
-                DATA_CACHE = {
-                    "monitored_users": {
-                        "twitch": {}
-                    }
-                }
-        elif os.path.exists(DATA_FILE_NAME):
-            with open(DATA_FILE_NAME, "r", encoding="utf-8") as f:
-                DATA_CACHE = json.load(f)
-            logger.info("✅ Dados carregados localmente. Missão concluída.")
+        if USE_AIOFILES:
+            async with aiofiles.open(file_path, 'r') as f:
+                content = await f.read()
         else:
-            logger.info("⚠️ Arquivo de dados local não encontrado. Criando um novo.")
+            with open(file_path, 'r') as f:
+                content = f.read()
+        
+        if not content.strip():
+            logger.warning(f"Arquivo {file_path} vazio")
+            return False
+            
+        data = json.loads(content)
+        
+        # Corrigido: Adiciona validação e atualização do DATA_CACHE aqui
+        if validate_data_structure(data):
+            async with DATA_LOCK:
+                DATA_CACHE.update(data)
+            return True
+        else:
+            logger.error(f"Estrutura de dados inválida em {file_path}")
+            return False
+    except json.JSONDecodeError as e:
+        logger.error(f"JSON inválido em {file_path}: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Erro ao carregar {file_path}: {e}")
+        return False
 
-        if not validate_data_structure(DATA_CACHE):
-            raise ValueError("Estrutura de dados inválida. Redefinindo o cache.")
-
-    except (FileNotFoundError, json.JSONDecodeError, ValueError) as e:
-        logger.error(f"❌ Erro ao carregar dados: {e}. Alerta: Falha na operação. Reiniciando dados.")
-        DATA_CACHE = {
-            "monitored_users": {
-                "twitch": {}
-            }
-        }
-        await save_data(drive_service)
-    except HttpError as e:
-        logger.error(f"❌ Erro da API do Google Drive: {e}. Alerta: Falha na operação.")
-
-    return DATA_CACHE
-
-
-async def save_data(drive_service: DriveService = None):
-    """Salva os dados no arquivo local e no Google Drive, se disponível."""
+async def load_data_from_drive_if_exists(drive_service: Optional['GoogleDriveService'] = None) -> None:
+    """Carrega dados do Drive ou arquivo local"""
+    global DATA_CACHE
+    
     try:
-        with open(DATA_FILE_NAME, "w", encoding="utf-8") as f:
-            json.dump(DATA_CACHE, f, indent=4)
-        logger.info("✅ Dados salvos localmente. Missão concluída.")
-
         if drive_service and drive_service.is_authenticated():
-            file_id = await drive_service.find_file(DATA_FILE_NAME)
-            if file_id:
-                await drive_service.update_file(file_id, DATA_FILE_NAME)
-                logger.info("✅ Dados atualizados no Google Drive. Missão concluída.")
-            else:
-                await drive_service.upload_file(DATA_FILE_NAME, "application/json")
-                logger.info("✅ Dados enviados para o Google Drive. Missão concluída.")
+            if await asyncio.to_thread(drive_service.download_file, DATA_FILE, DATA_FILE):
+                if await load_from_file(DATA_FILE):
+                    logger.info("Dados carregados do Google Drive")
+                    return
+
+        if os.path.exists(DATA_FILE):
+            if await load_from_file(DATA_FILE):
+                logger.info("Dados carregados localmente")
+                return
+
+        async with DATA_LOCK:
+            DATA_CACHE.update({
+                "streamers": {},
+                "youtube_channels": {},
+                "monitored_users": {
+                    "twitch": {},
+                    "youtube": {}
+                }
+            })
+        logger.info("Nova estrutura de dados criada")
 
     except Exception as e:
-        logger.error(f"❌ Erro ao salvar dados: {e}. Alerta: Falha na operação.")
+        logger.critical(f"Falha crítica ao carregar dados: {e}")
+        raise
 
-async def initialize_data() -> DriveService:
-    """Inicializa o serviço do Drive e carrega os dados."""
-    drive_service = DriveService()
-    await get_data(drive_service)
-    return drive_service
+async def save_data(drive_service: Optional['GoogleDriveService'] = None) -> None:
+    """Salva dados localmente e no Drive"""
+    try:
+        async with DATA_LOCK:
+            if USE_AIOFILES:
+                async with aiofiles.open(DATA_FILE, 'w') as f:
+                    await f.write(json.dumps(DATA_CACHE, indent=2))
+            else:
+                with open(DATA_FILE, 'w') as f:
+                    json.dump(DATA_CACHE, f, indent=2)
+
+            if drive_service and drive_service.is_authenticated():
+                await asyncio.to_thread(drive_service.upload_file, DATA_FILE, DATA_FILE)
+        
+        logger.info("Dados salvos com sucesso")
+    except Exception as e:
+        logger.error(f"Erro ao salvar dados: {e}")
+        raise
+
+async def get_data() -> Dict[str, Any]:
+    """Retorna uma cópia dos dados atuais"""
+    return DATA_CACHE.copy()
