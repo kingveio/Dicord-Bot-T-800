@@ -139,9 +139,9 @@ async def status(interaction: discord.Interaction):
                  f"Monitorando alvos: {monitored_count}"
     await interaction.followup.send(status_msg)
 
-@bot.tree.command(name="adicionar", description="Adiciona um canal para monitoramento (Twitch/YouTube).")
-@app_commands.describe(url="URL do canal")
-async def add_target(interaction: discord.Interaction, url: str):
+@bot.tree.command(name="adicionar", description="Adiciona um canal para monitoramento (Twitch/YouTube) e vincula a um membro.")
+@app_commands.describe(url="URL do canal (YouTube ou Twitch)", membro="Membro do Discord a ser vinculado")
+async def add_target(interaction: discord.Interaction, url: str, membro: discord.Member):
     await interaction.response.defer(ephemeral=True)
     platform = "youtube" if "youtube.com" in url or "youtu.be" in url else "twitch"
 
@@ -152,9 +152,9 @@ async def add_target(interaction: discord.Interaction, url: str):
             return
         
         data = await get_data()
-        data["monitored_users"]["youtube"][channel_id] = {"added_by": interaction.user.id}
+        data["monitored_users"]["youtube"][channel_id] = {"added_by": membro.id}
         await save_data(bot.drive_service)
-        await interaction.followup.send(f"✅ Canal do YouTube adicionado com sucesso para monitoramento.")
+        await interaction.followup.send(f"✅ Canal do YouTube adicionado com sucesso e vinculado a {membro.mention}.")
 
     elif platform == "twitch":
         username = url.split('/')[-1]
@@ -163,9 +163,9 @@ async def add_target(interaction: discord.Interaction, url: str):
             return
         
         data = await get_data()
-        data["monitored_users"]["twitch"][username.lower()] = {"added_by": interaction.user.id}
+        data["monitored_users"]["twitch"][username.lower()] = {"added_by": membro.id}
         await save_data(bot.drive_service)
-        await interaction.followup.send(f"✅ Streamer da Twitch adicionado com sucesso para monitoramento.")
+        await interaction.followup.send(f"✅ Streamer da Twitch adicionado com sucesso e vinculado a {membro.mention}.")
 
 @bot.tree.command(name="listar", description="Lista os canais e streamers monitorados.")
 async def list_targets(interaction: discord.Interaction):
