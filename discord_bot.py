@@ -12,10 +12,12 @@ intents.members = True
 intents.message_content = True
 
 class T800Bot(commands.Bot):
-    def __init__(self):
+    # O construtor agora aceita 'intents' e 'application_id'
+    def __init__(self, intents: discord.Intents, application_id: int): 
         super().__init__(
-            command_prefix="!",
+            command_prefix=commands.when_mentioned_or("!"),
             intents=intents,
+            application_id=application_id, # Passamos o ID aqui
             activity=discord.Activity(
                 type=discord.ActivityType.watching,
                 name="análise de alvos humanos"
@@ -28,9 +30,9 @@ class T800Bot(commands.Bot):
         self.twitch_api = None
         self.youtube_api = None
         self.drive_service = None
-        # Novo dicionário para rastrear o estado de live de cada usuário em cada plataforma
         self.live_users = {}
 
+    async def setup_hook(self):
     async def setup_hook(self):
         """Carrega os cogs e sincroniza os comandos após o bot estar pronto."""
         logger.info("⚙️ Iniciando setup_hook para carregar cogs e sincronizar comandos...")
