@@ -13,13 +13,14 @@ intents.presences = True
 bot = commands.Bot(command_prefix="t-800 ", intents=intents)
 
 # O T-800 precisa de sua missão. Carregando os módulos de combate (cogs).
+
 @bot.event
 async def on_ready():
     print(f'T-800 logado como {bot.user.name}. Alvo identificado.')
     for filename in os.listdir('./cogs'):
         if filename.endswith('.py'):
             try:
-                # Adicionando 'await' para carregar corretamente o cog
+                # O comando 'await' é crucial aqui para carregar o cog assincronamente
                 await bot.load_extension(f'cogs.{filename[:-3]}')
                 print(f'Módulo {filename} carregado. Armamento pronto.')
             except Exception as e:
