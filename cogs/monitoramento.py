@@ -54,11 +54,79 @@ class Monitoramento(commands.Cog):
                         logger.debug(f"Status de live do Twitch para {member_id} atualizado para {is_live}.")
 
         except Exception as e:
-            logger.error(f"❌ Falha no monitoramento do Twitch: {e}. Alerta: Falha na operação.")
+            logger.error(f"❌ Falha no monitoramento do Twitch: {e}. Alerta: Falha na operação.", exc_info=True)
 
-    # ========== COMANDOS DE ADMINISTRAÇÃO ========== #
-    # O resto do código para os comandos /adicionar_twitch e /remover_twitch permanece o mesmo
-    # e não precisa ser alterado.
+    # ========== COMANDOS DE BARRA ========== #
+
+    @app_commands.command(name="adicionar_twitch", description="Adiciona um streamer da Twitch para monitoramento.")
+    @app_commands.describe(
+        nome="Nome de usuário do streamer na Twitch (ex: alanzoka)",
+        discord_id="ID do usuário do Discord a ser marcado"
+    )
+    async def adicionar_twitch(self, interaction: discord.Interaction, nome: str, discord_id: str):
+        """Comando de barra para adicionar um streamer da Twitch à lista de monitoramento."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"Comando '/adicionar_twitch' acionado por {interaction.user.name} ({interaction.user.id}).")
+
+        if not self.bot.twitch_api:
+            await interaction.followup.send("⚠️ O serviço da Twitch não está disponível. Tente novamente mais tarde.")
+            return
+
+        streamer_name = nome.lower().strip()
+        
+        try:
+            data = await get_data()
+            if not data:
+                await interaction.followup.send("⚠️ Não foi possível carregar os dados. Alerta: Falha na operação.")
+                return
+
+            if streamer_name in data["monitored_users"]["twitch"]:
+                await interaction.followup.send(f"❌ O streamer **{streamer_name}** já está sendo monitorado.")
+                return
+
+            data["monitored_users"]["twitch"][streamer_name] = {
+                "guild_id": interaction.guild_id,
+                "added_by": discord_id,
+                "timestamp": datetime.now().isoformat()
+            }
+            await save_data(data)
+            
+            await interaction.followup.send(f"✅ O streamer **{streamer_name}** foi adicionado à lista de monitoramento, vinculado ao usuário Discord com ID **{discord_id}**.")
+            logger.info(f"Streamer '{streamer_name}' adicionado com sucesso.")
+
+        except Exception as e:
+            logger.error(f"❌ Falha ao adicionar streamer '{streamer_name}': {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Ocorreu um erro ao adicionar o streamer.")
+
+    @app_commands.command(name="remover_twitch", description="Remove um streamer do monitoramento.")
+    @app_commands.describe(nome="Nome de usuário do streamer na Twitch a ser removido (ex: alanzoka)")
+    async def remover_twitch(self, interaction: discord.Interaction, nome: str):
+        """Comando de barra para remover um streamer da lista de monitoramento."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"Comando '/remover_twitch' acionado por {interaction.user.name} ({interaction.user.id}).")
+
+        streamer_name = nome.lower().strip()
+
+        try:
+            data = await get_data()
+            if not data:
+                await interaction.followup.send("⚠️ Não foi possível carregar os dados. Alerta: Falha na operação.")
+                return
+
+            if streamer_name not in data["monitored_users"]["twitch"]:
+                await interaction.followup.send(f"❌ O streamer **{streamer_name}** não está na lista de monitoramento.")
+                return
+
+            del data["monitored_users"]["twitch"][streamer_name]
+            await save_data(data)
+
+            await interaction.followup.send(f"✅ O streamer **{streamer_name}** foi removido da lista de monitoramento.")
+            logger.info(f"Streamer '{streamer_name}' removido com sucesso.")
+
+        except Exception as e:
+            logger.error(f"❌ Falha ao remover streamer '{streamer_name}': {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Ocorreu um erro ao remover o streamer.")
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Monitoramento(bot))
