@@ -1,5 +1,5 @@
+# 📄 main.py
 import os
-import sys
 import asyncio
 import logging
 from discord_bot import bot
