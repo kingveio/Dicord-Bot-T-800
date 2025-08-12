@@ -15,14 +15,15 @@ bot = commands.Bot(command_prefix="t-800 ", intents=intents)
 # O T-800 precisa de sua missão. Carregando os módulos de combate (cogs).
 @bot.event
 async def on_ready():
-    print(f'T-800 logado como {bot.user.name}. Alvo identificado.')
+    print('Bot online.')
     for filename in os.listdir('./cogs'):
         if filename.endswith('.py'):
             try:
+                # O 'await' é essencial aqui para carregar as extensões
                 await bot.load_extension(f'cogs.{filename[:-3]}')
-                print(f'Módulo {filename} carregado. Armamento pronto.')
+                print(f'Cog {filename} carregado.')
             except Exception as e:
-                print(f'Falha ao carregar módulo {filename}. Erro: {e}')
+                print(f'Falha ao carregar cog {filename}. Erro: {e}')
     
     # Sincroniza os comandos de barra com o Discord
     # Isso pode demorar alguns segundos
