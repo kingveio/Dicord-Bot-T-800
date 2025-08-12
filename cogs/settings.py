@@ -30,6 +30,4 @@ class Settings(commands.Cog):
             await interaction.response.send_message("O T-800 não reconhece esse cargo. Por favor, mencione o cargo ou use seu ID.", ephemeral=True)
 
 def setup(bot):
-    # A função 'setup' deve ser síncrona (def).
-    # 'bot.add_cog' não precisa de 'await'.
     bot.add_cog(Settings(bot))
