@@ -1,26 +1,18 @@
-import discord
-from discord import app_commands
+# T-800: Módulo de aquisição de alvos. Twitch.
 from discord.ext import commands
-import logging
+from data.data_manager import DataManager
 
-logger = logging.getLogger("T-800")
-
-class TwitchCog(commands.Cog):
+class TwitchCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.data_manager = DataManager()
 
-    @app_commands.command(name="vincular_twitch", description="Vincula um canal da Twitch")
-    @app_commands.describe(
-        canal="Nome do canal na Twitch",
-        usuario="Usuário do Discord para vincular"
-    )
-    async def vincular_twitch(self, interaction: discord.Interaction, canal: str, usuario: discord.Member):
-        """Implementação completa do comando"""
-        try:
-            # Lógica de vinculação aqui
-            pass
-        except Exception as e:
-            logger.error(f"❌ Erro no comando: {e}")
+    @commands.command(name="addtwitch")
+    async def add_twitch_user(self, ctx, twitch_username: str):
+        # Adicionando um novo alvo da Twitch à memória.
+        user_id = ctx.author.id
+        self.data_manager.add_user(user_id, twitch_name=twitch_username)
+        await ctx.send(f"Alvo '{twitch_username}' adicionado à lista de vigilância da Twitch. Eu voltarei a verificar.")
 
-async def setup(bot):
-    await bot.add_cog(TwitchCog(bot))
+def setup(bot):
+    bot.add_cog(TwitchCommands(bot))
