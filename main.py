@@ -7,9 +7,9 @@ import discord
 from discord.ext import commands
 from discord.ext.commands import Bot, Context
 
-from discord_bot import T800Bot
+from discord_bot import T800Bot # Importe a classe
 from twitch_api import TwitchAPI
-from youtube_api import YouTubeAPI # <-- Adicione esta linha
+from youtube_api import YouTubeAPI
 from google_drive_service import GoogleDriveService
 from data_manager import initialize_data, get_data, save_data
 
@@ -44,9 +44,8 @@ intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
 bot = T800Bot(
-    command_prefix=commands.when_mentioned_or("!"),
-    intents=intents,
-    application_id=os.getenv("DISCORD_APPLICATION_ID")
+    intents=intents, # Passamos as intents
+    application_id=int(os.getenv("DISCORD_APPLICATION_ID")) # Passamos o ID e convertemos para int
 )
 
 async def main_async():
