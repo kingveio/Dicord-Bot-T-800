@@ -42,4 +42,3 @@ class DriveService:
         except Exception as e:
             logger.error(f"❌ Erro ao buscar arquivo: {e}")
             return None
-2. Problema do Token do Discord (401 Unauthoriz
