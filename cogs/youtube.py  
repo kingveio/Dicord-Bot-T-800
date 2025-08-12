@@ -1,4 +1,5 @@
 # T-800: Módulo de aquisição de alvos. YouTube.
+import discord
 from discord.ext import commands
 from data.data_manager import DataManager
 
@@ -7,12 +8,22 @@ class YouTubeCommands(commands.Cog):
         self.bot = bot
         self.data_manager = DataManager()
 
-    @commands.command(name="addyoutube")
-    async def add_youtube_user(self, ctx, youtube_username: str):
-        guild_id = ctx.guild.id
-        user_id = ctx.author.id
-        self.data_manager.add_user(guild_id, user_id, youtube_name=youtube_username)
-        await ctx.send(f"Alvo '{youtube_username}' adicionado à lista de vigilância do YouTube para este servidor. Eu voltarei a verificar.")
+    # Registrando o comando de barra /adicionar_youtube
+    @discord.app_commands.command(
+        name="adicionar_youtube",
+        description="Adiciona o seu canal do YouTube à lista de monitoramento de lives."
+    )
+    @discord.app_commands.describe(
+        username="O nome de usuário do seu canal no YouTube"
+    )
+    async def add_youtube_user(self, interaction: discord.Interaction, username: str):
+        # A lógica do comando é a mesma
+        guild_id = interaction.guild.id
+        user_id = interaction.user.id
+        self.data_manager.add_user(guild_id, user_id, youtube_name=username)
+        
+        # Responde à interação
+        await interaction.response.send_message(f"Alvo '{username}' adicionado à lista de vigilância do YouTube para este servidor. Eu voltarei a verificar.", ephemeral=True)
 
 def setup(bot):
     bot.add_cog(YouTubeCommands(bot))
