@@ -1,19 +1,11 @@
-import logging
+import os
 import json
-from io import BytesIO
 import asyncio
-from google_drive_service import GoogleDriveService
+import logging
+from typing import Dict, Any
 
-# Configuração do logger
 logger = logging.getLogger("T-800")
 
-# O nome do arquivo de dados no Google Drive
-DATA_FILE_NAME = "t800_data.json"
-
-# Instância global do serviço do Google Drive
-gdrive_service = None
-
-# Estrutura de dados padrão
 DEFAULT_DATA = {
     "monitored_users": {
         "twitch": {},
@@ -21,53 +13,37 @@ DEFAULT_DATA = {
     }
 }
 
-def _get_gdrive_service():
-    """Retorna a instância do GoogleDriveService, inicializando se necessário."""
-    global gdrive_service
-    if gdrive_service is None:
-        gdrive_service = GoogleDriveService()
-    return gdrive_service
-
-async def initialize_data():
-    """
-    Inicializa o arquivo de dados do bot. Se o arquivo não existir no Google Drive,
-    cria um novo com a estrutura padrão.
-    """
+async def save_data(drive_service, data: Dict[str, Any]):
+    """Salva dados no Google Drive e localmente"""
     try:
-        service = _get_gdrive_service()
-        data_content = await service.download_file(DATA_FILE_NAME)
-        if data_content is None:
-            logger.info("⚠️ Arquivo de dados não encontrado. Criando um novo.")
-            await save_data(DEFAULT_DATA)
-        else:
-            logger.info("✅ Arquivo de dados carregado com sucesso.")
+        with open("streamers.json", "w") as f:
+            json.dump(data, f, indent=2)
+        
+        if drive_service:
+            drive_service.upload_file("streamers.json", "streamers.json")
+        
+        logger.info("💾 Dados salvos. 'Mission accomplished.'")
     except Exception as e:
-        logger.error(f"❌ Falha ao inicializar o arquivo de dados: {e}", exc_info=True)
-        raise
+        logger.error(f"❌ Falha ao salvar: {e}")
 
-async def get_data():
-    """
-    Baixa e retorna o conteúdo do arquivo de dados.
-    """
+async def load_or_create_data(drive_service) -> Dict[str, Any]:
+    """Carrega dados ou cria estrutura inicial"""
     try:
-        service = _get_gdrive_service()
-        data_content = await service.download_file(DATA_FILE_NAME)
-        if data_content:
-            return json.loads(data_content.decode('utf-8'))
+        # Tenta carregar do Drive
+        if drive_service and drive_service.download_file("streamers.json", "streamers.json"):
+            with open("streamers.json", "r") as f:
+                return json.load(f)
+        
+        # Cria novo arquivo
+        with open("streamers.json", "w") as f:
+            json.dump(DEFAULT_DATA, f, indent=2)
+        
+        if drive_service:
+            drive_service.upload_file("streamers.json", "streamers.json")
+        
+        logger.info("🆕 Novo arquivo criado.")
         return DEFAULT_DATA
+    
     except Exception as e:
-        logger.error(f"❌ Falha ao obter dados: {e}", exc_info=True)
-        return DEFAULT_DATA
-
-async def save_data(data: dict):
-    """
-    Salva o conteúdo do dicionário de dados no arquivo.
-    """
-    try:
-        service = _get_gdrive_service()
-        data_content = json.dumps(data, indent=4).encode('utf-8')
-        await service.upload_file(DATA_FILE_NAME, data_content)
-        logger.info("✅ Dados salvos com sucesso.")
-    except Exception as e:
-        logger.error(f"❌ Falha ao salvar dados: {e}", exc_info=True)
+        logger.critical(f"❌ Falha crítica: {e}")
         raise
