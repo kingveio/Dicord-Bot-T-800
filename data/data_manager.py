@@ -1,4 +1,5 @@
-# T-800: Módulo de memória. Gerenciando dados de usuários por servidor.
+# T-800: Módulo de memória. Gerenciando dados de usuários.
+# Este é um exemplo simples. Você pode adaptá-lo para usar o Google Drive.
 import json
 import os
 
@@ -8,53 +9,25 @@ class DataManager:
         self.data = self._load_data()
 
     def _load_data(self):
+        # Carregando dados da memória. Se não existirem, inicializa uma nova.
         if os.path.exists(self.filepath):
             with open(self.filepath, "r") as f:
                 return json.load(f)
-        # Estrutura de dados para múltiplos servidores
-        return {"guilds": {}}
+        return {"users": {}}
 
     def _save_data(self):
+        # Salvando dados na memória.
         with open(self.filepath, "w") as f:
             json.dump(self.data, f, indent=4)
 
-    def get_guild_data(self, guild_id: int):
-        # Obtém todas as configurações de um servidor
-        guild_id_str = str(guild_id)
-        if guild_id_str not in self.data["guilds"]:
-            self.data["guilds"][guild_id_str] = {
-                "live_role_id": None,
-                "users": {}
-            }
-            self._save_data()
-        return self.data["guilds"][guild_id_str]
-
-    def set_live_role_id(self, guild_id: int, role_id: int):
-        # Define qual cargo o T-800 deve dar aos alvos
-        guild_data = self.get_guild_data(guild_id)
-        guild_data["live_role_id"] = role_id
+    def add_user(self, user_id: int, twitch_name: str | None = None, youtube_name: str | None = None):
+        # Adicionando um novo "alvo" (usuário) na lista de monitoramento.
+        self.data["users"][str(user_id)] = {
+            "twitch": twitch_name,
+            "youtube": youtube_name
+        }
         self._save_data()
 
-    def add_user(self, guild_id: int, user_id: int, twitch_name: str | None = None, youtube_name: str | None = None):
-        # Adiciona um novo alvo para um servidor específico
-        guild_data = self.get_guild_data(guild_id)
-        user_id_str = str(user_id)
-        if user_id_str not in guild_data["users"]:
-            guild_data["users"][user_id_str] = {}
-        
-        if twitch_name:
-            guild_data["users"][user_id_str]["twitch"] = twitch_name
-        if youtube_name:
-            guild_data["users"][user_id_str]["youtube"] = youtube_name
-            
-        self._save_data()
-
-    def remove_user_streamer(self, guild_id: int, user_id: int, streamer_type: str):
-        # O Exterminador remove o alvo da lista de monitoramento
-        guild_data = self.get_guild_data(guild_id)
-        user_id_str = str(user_id)
-        if user_id_str in guild_data["users"] and streamer_type in guild_data["users"][user_id_str]:
-            del guild_data["users"][user_id_str][streamer_type]
-            if not guild_data["users"][user_id_str]:
-                del guild_data["users"][user_id_str]
-            self._save_data()
+    def get_users(self):
+        # Obtendo a lista de todos os usuários para monitoramento.
+        return self.data["users"]
