@@ -54,30 +54,49 @@ class DriveService:
             return None
 
 async def load_or_create_data(drive_service) -> dict:
-    DEFAULT_DATA = {"monitored_users": {"twitch": {}, "youtube": {}}}
-    file_name = "streamers.json"
+    DEFAULT_DATA = {
+        "monitored_users": {
+            "twitch": {},
+            "youtube": {}
+        }
+    }
+    FILE_NAME = "streamers.json"
     
     try:
         # Tenta carregar localmente primeiro
-        if os.path.exists(file_name):
-            with open(file_name, "r") as f:
-                return json.load(f)
-                
+        if os.path.exists(FILE_NAME):
+            with open(FILE_NAME, 'r') as f:
+                data = json.load(f)
+                if isinstance(data, dict) and 'monitored_users' in data:
+                    return data
+                logger.warning("⚠️ Estrutura inválida, recriando arquivo")
+        
         # Tenta do Google Drive se disponível
         if drive_service and drive_service.service:
-            if drive_service.download_file(file_name, file_name):
-                with open(file_name, "r") as f:
-                    return json.load(f)
+            if drive_service.download_file(FILE_NAME, FILE_NAME):
+                with open(FILE_NAME, 'r') as f:
+                    data = json.load(f)
+                    if isinstance(data, dict) and 'monitored_users' in data:
+                        return data
+                    logger.warning("⚠️ Estrutura inválida no Drive, recriando arquivo")
         
         # Cria novo arquivo
-        with open(file_name, "w") as f:
+        with open(FILE_NAME, 'w') as f:
             json.dump(DEFAULT_DATA, f, indent=2)
-            
+            logger.info("🆕 Arquivo streamers.json criado com estrutura padrão")
+        
+        # Tenta enviar para o Drive
         if drive_service and drive_service.service:
-            drive_service.upload_file(file_name, file_name)
-            
+            if not drive_service.upload_file(FILE_NAME, FILE_NAME):
+                logger.warning("⚠️ Não foi possível enviar para o Google Drive")
+        
         return DEFAULT_DATA
         
+    except json.JSONDecodeError:
+        logger.error("❌ Arquivo corrompido, recriando...")
+        with open(FILE_NAME, 'w') as f:
+            json.dump(DEFAULT_DATA, f, indent=2)
+        return DEFAULT_DATA
     except Exception as e:
-        logger.error(f"❌ Falha ao carregar dados: {e}")
+        logger.error(f"❌ Erro crítico: {e}")
         return DEFAULT_DATA
