@@ -28,6 +28,7 @@ class T800Bot(commands.Bot):
         self.twitch_api = None
         self.youtube_api = None
         self.drive_service = None
+        # Novo dicionário para rastrear o estado de live de cada usuário em cada plataforma
         self.live_users = {}
 
     async def setup_hook(self):
@@ -49,6 +50,7 @@ class T800Bot(commands.Bot):
             except Exception as e:
                 logger.error(f"❌ Falha ao sincronizar comandos globalmente: {e}")
 
+        # Inicia o loop para gerenciar os cargos de live de forma unificada
         self.manage_live_roles.start()
         logger.info("✅ Loop de gerenciamento de cargos iniciado.")
 
@@ -72,17 +74,11 @@ class T800Bot(commands.Bot):
             try:
                 guild_id = status.get("guild_id")
                 if not guild_id:
-                    logger.warning(f"user_id {user_id} não possui guild_id, ignorando.")
                     continue
                 
                 guild = self.get_guild(guild_id)
-                if not guild:
-                    logger.warning(f"Guilda com ID {guild_id} não encontrada. Ignorando usuário {user_id}.")
-                    continue
-                
-                member = guild.get_member(int(user_id))
+                member = guild.get_member(user_id) if guild else None
                 if not member:
-                    logger.warning(f"Membro com ID {user_id} não encontrado na guilda {guild.name}. Ignorando.")
                     continue
 
                 live_role = discord.utils.get(guild.roles, name=self.live_role_name)
