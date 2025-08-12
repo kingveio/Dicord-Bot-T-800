@@ -2,12 +2,14 @@
 import os
 from dotenv import load_dotenv
 
+# O T-800 não armazena dados sensíveis no código-fonte.
+# Carregamos as credenciais do ambiente de execução.
 load_dotenv()
 
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
+GUILD_ID = os.getenv("GUILD_ID") # ID do seu servidor
+LIVE_ROLE_ID = os.getenv("LIVE_ROLE_ID") # ID do cargo que será atribuído
 TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
 TWITCH_CLIENT_SECRET = os.getenv("TWITCH_CLIENT_SECRET")
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
-
-# As configurações de servidor (GUILD_ID, LIVE_ROLE_ID) agora serão gerenciadas pelo DataManager.
-# O T-800 não armazena essas diretivas globalmente, apenas localmente em sua memória.
+GOOGLE_DRIVE_FOLDER_ID = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
