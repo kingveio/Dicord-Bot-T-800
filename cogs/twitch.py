@@ -24,6 +24,4 @@ class TwitchCommands(commands.Cog):
         await interaction.response.send_message(f"Alvo '{username}' adicionado à lista de vigilância da Twitch para este servidor. Eu voltarei a verificar.", ephemeral=True)
 
 def setup(bot):
-    # A função 'setup' deve ser síncrona (def).
-    # 'bot.add_cog' não precisa de 'await'.
     bot.add_cog(TwitchCommands(bot))
