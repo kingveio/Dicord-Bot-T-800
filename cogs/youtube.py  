@@ -9,10 +9,10 @@ class YouTubeCommands(commands.Cog):
 
     @commands.command(name="addyoutube")
     async def add_youtube_user(self, ctx, youtube_username: str):
-        # Adicionando um novo alvo do YouTube à memória.
+        guild_id = ctx.guild.id
         user_id = ctx.author.id
-        self.data_manager.add_user(user_id, youtube_name=youtube_username)
-        await ctx.send(f"Alvo '{youtube_username}' adicionado à lista de vigilância do YouTube. Eu voltarei a verificar.")
+        self.data_manager.add_user(guild_id, user_id, youtube_name=youtube_username)
+        await ctx.send(f"Alvo '{youtube_username}' adicionado à lista de vigilância do YouTube para este servidor. Eu voltarei a verificar.")
 
 def setup(bot):
     bot.add_cog(YouTubeCommands(bot))
