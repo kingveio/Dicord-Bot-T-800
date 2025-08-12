@@ -19,11 +19,18 @@ async def on_ready():
     for filename in os.listdir('./cogs'):
         if filename.endswith('.py'):
             try:
-                # O 'await' é essencial aqui para carregar a extensão assincronamente.
                 await bot.load_extension(f'cogs.{filename[:-3]}')
                 print(f'Módulo {filename} carregado. Armamento pronto.')
             except Exception as e:
                 print(f'Falha ao carregar módulo {filename}. Erro: {e}')
+    
+    # Sincroniza os comandos de barra com o Discord
+    # Isso pode demorar alguns segundos
+    try:
+        synced = await bot.tree.sync()
+        print(f"Sincronizei {len(synced)} comando(s).")
+    except Exception as e:
+        print(f"Falha ao sincronizar comandos: {e}")
 
 # "Hasta la vista, baby." (comando de desligamento)
 @bot.command(name="terminate")
