@@ -1,4 +1,5 @@
 # T-800: Módulo de aquisição de alvos. Twitch.
+import discord
 from discord.ext import commands
 from data.data_manager import DataManager
 
@@ -7,11 +8,22 @@ class TwitchCommands(commands.Cog):
         self.bot = bot
         self.data_manager = DataManager()
 
-    @commands.command(name="addtwitch")
-    async def add_twitch_user(self, ctx, twitch_username: str):
-        guild_id = ctx.guild.id
-        user_id = ctx.author.id
-        self.data_manager.add_user(guild_id, user_id, twitch_name=twitch_username)
-        await ctx.send(f"Alvo '{twitch_username}' adicionado à lista de vigilância da Twitch para este servidor. Eu voltarei a verificar.")
+    # Registrando o comando de barra /adicionar_twitch
+    @discord.app_commands.command(
+        name="adicionar_twitch",
+        description="Adiciona o seu canal da Twitch à lista de monitoramento de lives."
+    )
+    @discord.app_commands.describe(
+        username="O nome de usuário do seu canal na Twitch"
+    )
+    async def add_twitch_user(self, interaction: discord.Interaction, username: str):
+        # A lógica do comando é a mesma, mas a resposta é diferente
+        guild_id = interaction.guild.id
+        user_id = interaction.user.id
+        self.data_manager.add_user(guild_id, user_id, twitch_name=username)
+        
+        # Responde à interação
+        await interaction.response.send_message(f"Alvo '{username}' adicionado à lista de vigilância da Twitch para este servidor. Eu voltarei a verificar.", ephemeral=True)
 
 def setup(bot):
+    bot.add_cog(TwitchCommands(bot))
