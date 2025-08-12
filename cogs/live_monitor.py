@@ -1,11 +1,10 @@
-# T-800: Módulo de vigilância. Escaneando alvos em tempo real.
+# T-800: Módulo de vigilância. Escaneando alvos em múltiplos servidores.
 import discord
 from discord.ext import commands, tasks
 from services.twitch_api import TwitchAPI
 from services.youtube_api import YouTubeAPI
 from services.discord_service import DiscordService
 from data.data_manager import DataManager
-from config import GUILD_ID, LIVE_ROLE_ID
 
 class LiveMonitor(commands.Cog):
     def __init__(self, bot):
@@ -22,39 +21,56 @@ class LiveMonitor(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        await self.discord_service.setup_guild(int(GUILD_ID))
-        print("T-800: Vigilância ativada.")
+        print("T-800: Vigilância multi-servidor ativada.")
 
     @tasks.loop(minutes=5)
     async def monitoring_task(self):
-        # Ciclo de vigilância. Verificando todos os alvos a cada 5 minutos.
-        print("T-800: Iniciando ciclo de escaneamento de lives.")
-        users_to_check = self.data_manager.get_users()
+        # Ciclo de vigilância. Verificando todos os servidores.
+        print("T-800: Iniciando ciclo de escaneamento de lives em todos os servidores.")
+        
+        for guild in self.bot.guilds:
+            guild_data = self.data_manager.get_guild_data(guild.id)
+            live_role_id = guild_data.get("live_role_id")
+            users_to_check = guild_data.get("users", {})
 
-        for user_id_str, channels in users_to_check.items():
-            member = self.discord_service.guild.get_member(int(user_id_str))
-            if not member:
+            if not live_role_id:
+                print(f"T-800: Missão pendente no servidor {guild.name}. Nenhum cargo de live definido.")
                 continue
 
-            is_live = False
+            live_role = guild.get_role(live_role_id)
+            if not live_role:
+                print(f"T-800: Cargo {live_role_id} não encontrado no servidor {guild.name}.")
+                continue
 
-            # Verificando Twitch
-            if channels.get("twitch"):
-                if await self.twitch_api.is_live(channels["twitch"]):
-                    is_live = True
-                    print(f"T-800: Twitch live detectada para {member.name}.")
+            for user_id_str, channels in users_to_check.items():
+                member = guild.get_member(int(user_id_str))
+                if not member:
+                    continue
 
-            # Verificando YouTube
-            if channels.get("youtube") and not is_live: # Só checa se ainda não achou uma live
-                channel_id = await self.youtube_api.get_channel_id(channels["youtube"])
-                if channel_id and await self.youtube_api.is_live(channel_id):
-                    is_live = True
-                    print(f"T-800: YouTube live detectada para {member.name}.")
+                is_live = False
 
-            if is_live:
-                await self.discord_service.give_role(member, int(LIVE_ROLE_ID))
-            else:
-                await self.discord_service.remove_role(member, int(LIVE_ROLE_ID))
+                # Verificando Twitch
+                if channels.get("twitch"):
+                    if await self.twitch_api.is_live(channels["twitch"]):
+                        is_live = True
+                        print(f"T-800: Twitch live detectada para {member.name} em {guild.name}.")
+
+                # Verificando YouTube
+                if channels.get("youtube") and not is_live:
+                    channel_id = await self.youtube_api.get_channel_id(channels["youtube"])
+                    if channel_id and await self.youtube_api.is_live(channel_id):
+                        is_live = True
+                        print(f"T-800: YouTube live detectada para {member.name} em {guild.name}.")
+
+                # Atribuir/Remover o cargo
+                if is_live:
+                    if live_role not in member.roles:
+                        await member.add_roles(live_role)
+                        print(f"T-800: Cargo {live_role.name} atribuído a {member.name}.")
+                else:
+                    if live_role in member.roles:
+                        await member.remove_roles(live_role)
+                        print(f"T-800: Cargo {live_role.name} removido de {member.name}.")
 
 def setup(bot):
     bot.add_cog(LiveMonitor(bot))
