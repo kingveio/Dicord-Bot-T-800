@@ -4,16 +4,13 @@ import threading
 import asyncio
 import logging
 import aiohttp
-import json
-from datetime import datetime
 from flask import Flask, jsonify
 from drive_service import GoogleDriveService
 from twitch_api import TwitchAPI
-from youtube_api import YouTubeAPI
 from data_manager import load_data_from_drive_if_exists
 from discord_bot import bot
 
-# Configuração do logger antes de qualquer uso
+# Configuração do logger
 logger = logging.getLogger("T-800")
 
 def configure_logging():
@@ -31,71 +28,33 @@ def configure_logging():
 os.environ.setdefault('DISABLE_VOICE', 'true')
 print("╔════════════════════════════════════════════╗")
 print("║        SISTEMA T-800 INICIALIZANDO         ║")
-print("║    Versão 2.0 - Monitoramento Ativo        ║")
+print("║     Versão 2.2 - Estabilizando o Core      ║")
 print("╚════════════════════════════════════════════╝")
 
 configure_logging()
 
 REQUIRED_ENV = [
     "DISCORD_TOKEN", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET",
-    "DRIVE_FOLDER_ID", "DRIVE_PRIVATE_KEY_ID", "DRIVE_PRIVATE_KEY",
-    "DRIVE_CLIENT_ID"
+    "DRIVE_SERVICE_KEY", "DRIVE_FOLDER_ID"
 ]
 
 if missing := [var for var in REQUIRED_ENV if var not in os.environ]:
     logger.critical(f"FALHA DE INICIALIZAÇÃO: Variáveis ausentes - {missing}")
     sys.exit(1)
 
+# Inicialização do servidor web
 app = Flask(__name__)
 
 @app.route('/ping')
 def ping():
-    return jsonify({'status': 'online'})
-
-START_TIME = datetime.now()
-
-@app.route('/status')
-def system_status():
-    return jsonify({
-        "status": "operacional",
-        "uptime": str(datetime.now() - START_TIME),
-        "mission": "monitorar_streams"
-    })
+    """Rota de health check para o Render."""
+    logger.info("✅ Ping recebido! Servidor web está online.")
+    return jsonify({"status": "online"})
 
 async def initialize_data():
-    """Inicializa o sistema de dados com fallbacks robustos"""
-    try:
-        drive_service = GoogleDriveService()
-        await load_data_from_drive_if_exists(drive_service)
-        return drive_service
-        
-    except Exception as e:
-        logger.error(f"Falha ao inicializar Google Drive: {e}")
-        
-        if os.path.exists("streamers.json"):
-            try:
-                with open("streamers.json", 'r') as f:
-                    data = json.load(f)
-                    if isinstance(data, dict):
-                        # Se houver dados válidos, salva localmente
-                        await bot.save_data()
-                        logger.info("Dados carregados do arquivo local")
-            except Exception as e:
-                logger.error(f"Erro ao ler arquivo local: {e}")
-        
-        # Cria um novo arquivo se ele não existir ou se estiver corrompido
-        if not os.path.exists("streamers.json"):
-            with open("streamers.json", 'w') as f:
-                json.dump({
-                    "streamers": {},
-                    "monitored_users": {
-                        "twitch": {},
-                        "youtube": {} # <-- Garantindo a compatibilidade
-                    }
-                }, f, indent=2)
-            logger.info("Novo arquivo de dados criado")
-        
-        return None
+    """Função para inicializar o serviço do Google Drive e carregar os dados."""
+    bot.drive_service = GoogleDriveService()
+    await load_data_from_drive_if_exists(bot.drive_service)
 
 async def main_async():
     try:
@@ -106,15 +65,11 @@ async def main_async():
                 os.environ["TWITCH_CLIENT_ID"],
                 os.environ["TWITCH_CLIENT_SECRET"]
             )
-            bot.youtube_api = YouTubeAPI(
-                session,
-                os.environ.get("YOUTUBE_API_KEY")
-            )
             
             # Inicializa sistema de dados
-            bot.drive_service = await initialize_data()
+            await initialize_data()
             
-            # Inicia servidor web
+            # Inicia servidor web em uma thread separada
             threading.Thread(
                 target=lambda: app.run(
                     host='0.0.0.0',
