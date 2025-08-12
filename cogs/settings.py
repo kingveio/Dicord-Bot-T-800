@@ -1,5 +1,4 @@
-# T-800: Módulo de calibração. Definindo parâmetros de missão por servidor.
-import discord
+# T-800: Módulo de calibração.
 from discord.ext import commands
 from data.data_manager import DataManager
 
@@ -24,4 +23,4 @@ class Settings(commands.Cog):
             await ctx.send("O T-800 não reconhece esse cargo. Por favor, mencione o cargo ou use seu ID.")
 
 def setup(bot):
-    bot.add_cog(Settings(bot))
+     bot.add_cog(Settings(bot))
