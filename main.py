@@ -29,6 +29,7 @@ if not DISCORD_TOKEN:
     exit()
 
 # Rota para o ping do Render
+app = Flask(__name__)
 
 @app.route('/ping')
 def ping():
