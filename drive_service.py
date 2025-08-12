@@ -8,34 +8,38 @@ logger = logging.getLogger("T-800")
 
 class DriveService:
     def __init__(self):
-        self.SCOPES = ["https://www.googleapis.com/auth/drive"]
-        self.service = self._authenticate()
-        logger.info("☁️ Conexão com Google Drive estabelecida.")
+        self.SCOPES = ['https://www.googleapis.com/auth/drive']
+        self.service = None
+        try:
+            self.service = self._authenticate()
+            logger.info("✅ Conexão com Google Drive estabelecida.")
+        except Exception as e:
+            logger.warning(f"⚠️ Falha no Google Drive: {e}. Usando armazenamento local.")
 
     def _authenticate(self):
         creds = service_account.Credentials.from_service_account_info(
             {
                 "type": "service_account",
-                "private_key": os.getenv("DRIVE_PRIVATE_KEY").replace("\\n", "\n"),
+                "private_key": os.getenv("DRIVE_PRIVATE_KEY").replace('\\n', '\n'),
                 "client_email": os.getenv("DRIVE_CLIENT_EMAIL"),
                 "token_uri": "https://oauth2.googleapis.com/token",
             },
             scopes=self.SCOPES
         )
-        return build("drive", "v3", credentials=creds)
+        return build('drive', 'v3', credentials=creds, static_discovery=False)
 
-    def download_file(self, file_name: str, local_path: str) -> bool:
+    def find_file(self, file_name: str):
         try:
-            # Implementação completa aqui
-            pass
+            if not self.service:
+                return None
+                
+            results = self.service.files().list(
+                q=f"name='{file_name}' and '{os.getenv('DRIVE_FOLDER_ID')}' in parents",
+                fields="files(id, name)",
+                supportsAllDrives=True  # Adicionado para Shared Drives
+            ).execute()
+            return results.get('files', [None])[0]
         except Exception as e:
-            logger.error(f"❌ Download falhou: {e}")
-            return False
-
-    def upload_file(self, file_path: str, file_name: str) -> bool:
-        try:
-            # Implementação completa aqui
-            pass
-        except Exception as e:
-            logger.error(f"❌ Upload falhou: {e}")
-            return False
+            logger.error(f"❌ Erro ao buscar arquivo: {e}")
+            return None
+2. Problema do Token do Discord (401 Unauthoriz
