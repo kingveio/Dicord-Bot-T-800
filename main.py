@@ -19,6 +19,7 @@ async def on_ready():
     for filename in os.listdir('./cogs'):
         if filename.endswith('.py'):
             try:
+                # Adicionando 'await' para carregar corretamente o cog
                 await bot.load_extension(f'cogs.{filename[:-3]}')
                 print(f'Módulo {filename} carregado. Armamento pronto.')
             except Exception as e:
