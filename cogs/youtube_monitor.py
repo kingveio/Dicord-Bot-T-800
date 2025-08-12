@@ -1,7 +1,9 @@
 import discord
 from discord.ext import commands, tasks
+from discord import app_commands
 import logging
 from datetime import datetime
+from data_manager import get_data, save_data
 
 # Configuração do logger para este cog
 logger = logging.getLogger("T-800")
@@ -25,7 +27,7 @@ class YouTubeMonitor(commands.Cog):
 
         logger.info("🔍 Análise de alvos YouTube iniciada...")
         try:
-            data = await self.bot.get_data()
+            data = await get_data()
             if not data:
                 logger.error("⚠️ Dados não carregados corretamente! Alerta: Falha na operação.")
                 return
@@ -51,11 +53,79 @@ class YouTubeMonitor(commands.Cog):
                         logger.debug(f"Status de live do YouTube para {member_id} atualizado para {is_live}.")
                         
         except Exception as e:
-            logger.error(f"❌ Falha no monitoramento do YouTube: {e}. Alerta: Falha na operação.")
+            logger.error(f"❌ Falha no monitoramento do YouTube: {e}. Alerta: Falha na operação.", exc_info=True)
+            
+    # ========== COMANDOS DE BARRA ========== #
 
-    # ========== COMANDOS DE ADMINISTRAÇÃO ========== #
-    # O resto do código para os comandos /adicionar_yt e /remover_yt permanece o mesmo
-    # e não precisa ser alterado.
+    @app_commands.command(name="adicionar_youtube", description="Adiciona um canal do YouTube para monitoramento.")
+    @app_commands.describe(
+        nome="Nome do canal do YouTube (ex: alanzoka)",
+        discord_id="ID do usuário do Discord a ser marcado"
+    )
+    async def adicionar_youtube(self, interaction: discord.Interaction, nome: str, discord_id: str):
+        """Comando de barra para adicionar um canal do YouTube à lista de monitoramento."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"Comando '/adicionar_youtube' acionado por {interaction.user.name} ({interaction.user.id}).")
+
+        if not self.bot.youtube_api:
+            await interaction.followup.send("⚠️ O serviço do YouTube não está disponível. Tente novamente mais tarde.")
+            return
+
+        channel_name = nome.lower().strip()
+        
+        try:
+            data = await get_data()
+            if not data:
+                await interaction.followup.send("⚠️ Não foi possível carregar os dados. Alerta: Falha na operação.")
+                return
+
+            if channel_name in data["monitored_users"]["youtube"]:
+                await interaction.followup.send(f"❌ O canal **{channel_name}** já está sendo monitorado.")
+                return
+
+            data["monitored_users"]["youtube"][channel_name] = {
+                "guild_id": interaction.guild_id,
+                "added_by": discord_id,
+                "timestamp": datetime.now().isoformat()
+            }
+            await save_data(data)
+            
+            await interaction.followup.send(f"✅ O canal **{channel_name}** foi adicionado à lista de monitoramento, vinculado ao usuário Discord com ID **{discord_id}**.")
+            logger.info(f"Canal '{channel_name}' adicionado com sucesso.")
+
+        except Exception as e:
+            logger.error(f"❌ Falha ao adicionar canal '{channel_name}': {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Ocorreu um erro ao adicionar o canal.")
+
+    @app_commands.command(name="remover_youtube", description="Remove um canal do YouTube do monitoramento.")
+    @app_commands.describe(nome="Nome do canal do YouTube a ser removido (ex: alanzoka)")
+    async def remover_youtube(self, interaction: discord.Interaction, nome: str):
+        """Comando de barra para remover um canal do YouTube da lista de monitoramento."""
+        await interaction.response.defer(ephemeral=True)
+        logger.info(f"Comando '/remover_youtube' acionado por {interaction.user.name} ({interaction.user.id}).")
+
+        channel_name = nome.lower().strip()
+
+        try:
+            data = await get_data()
+            if not data:
+                await interaction.followup.send("⚠️ Não foi possível carregar os dados. Alerta: Falha na operação.")
+                return
+
+            if channel_name not in data["monitored_users"]["youtube"]:
+                await interaction.followup.send(f"❌ O canal **{channel_name}** não está na lista de monitoramento.")
+                return
+
+            del data["monitored_users"]["youtube"][channel_name]
+            await save_data(data)
+
+            await interaction.followup.send(f"✅ O canal **{channel_name}** foi removido da lista de monitoramento.")
+            logger.info(f"Canal '{channel_name}' removido com sucesso.")
+
+        except Exception as e:
+            logger.error(f"❌ Falha ao remover canal '{channel_name}': {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Ocorreu um erro ao remover o canal.")
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(YouTubeMonitor(bot))
