@@ -31,7 +31,7 @@ class T800Bot(commands.Bot):
 
     async def setup_hook(self):
         """Carrega os cogs e sincroniza os comandos após o bot estar pronto."""
-        # Carrega os cogs
+        logger.info("⚙️ Iniciando setup_hook para carregar cogs e sincronizar comandos...")
         cogs_to_load = ["cogs.monitoramento", "cogs.youtube_monitor", "cogs.admin"]
         for cog in cogs_to_load:
             try:
@@ -52,9 +52,21 @@ class T800Bot(commands.Bot):
     @commands.Cog.listener()
     async def on_ready(self):
         """Evento quando o bot está pronto para uso."""
-        logger.info("✅ Sistema online e pronto para operar.")
+        logger.info(f"✅ Sistema online e pronto para operar como {self.user.name} ({self.user.id}).")
         self.system_ready = True
         
+    async def on_command_error(self, ctx: commands.Context, error: commands.CommandError):
+        """Manipulador de erros para comandos de prefixo."""
+        if isinstance(error, commands.MissingRequiredArgument):
+            await ctx.send("⚠️ Faltou um argumento para este comando.")
+        elif isinstance(error, commands.BadArgument):
+            await ctx.send("⚠️ Um dos argumentos fornecidos é inválido.")
+        elif isinstance(error, commands.CommandNotFound):
+            return # Ignora comandos que não existem
+        else:
+            logger.error(f"❌ Erro em comando: {error}")
+            await ctx.send(f"❌ Ocorreu um erro: {error}")
+
 bot = T800Bot()
 
 # Adiciona os métodos de dados à classe do bot para facilitar o acesso dos cogs
