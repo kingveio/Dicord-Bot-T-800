@@ -35,7 +35,7 @@ configure_logging()
 
 REQUIRED_ENV = [
     "DISCORD_TOKEN", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET",
-    "DRIVE_SERVICE_KEY", "DRIVE_FOLDER_ID"
+    "DRIVE_SERVICE_KEY", "DRIVE_FOLDER_ID", "YOUTUBE_API_KEY"
 ]
 
 if missing := [var for var in REQUIRED_ENV if var not in os.environ]:
