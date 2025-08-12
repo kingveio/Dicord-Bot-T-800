@@ -20,7 +20,7 @@ async def on_ready():
     for filename in os.listdir('./cogs'):
         if filename.endswith('.py'):
             try:
-                # O 'await' é essencial aqui para carregar a extensão assincronamente
+                # O 'await' é essencial aqui para carregar a extensão assincronamente.
                 await bot.load_extension(f'cogs.{filename[:-3]}')
                 print(f'Módulo {filename} carregado. Armamento pronto.')
             except Exception as e:
