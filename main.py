@@ -45,7 +45,7 @@ intents.members = True
 intents.message_content = True
 bot = T800Bot(
     intents=intents, # Passamos as intents
-    application_id=int(os.getenv("DISCORD_TOKEN")) # Passamos o ID e convertemos para int
+    application_id=int(os.getenv("DISCORD_APPLICATION_ID")) # Passamos o ID e convertemos para int
 )
 
 async def main_async():
