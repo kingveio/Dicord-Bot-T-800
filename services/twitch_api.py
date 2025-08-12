@@ -9,7 +9,6 @@ class TwitchAPI:
         self.token = None
 
     async def _get_token(self):
-        # Obtendo token de acesso, essencial para a missão.
         async with aiohttp.ClientSession() as session:
             url = f"https://id.twitch.tv/oauth2/token?client_id={self.client_id}&client_secret={self.client_secret}&grant_type=client_credentials"
             async with session.post(url) as response:
@@ -26,9 +25,8 @@ class TwitchAPI:
         }
         url = f"https://api.twitch.tv/helix/streams?user_login={username}"
 
-        # Enviando a solicitação para a Twitch para verificar o status.
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=headers) as response:
                 data = await response.json()
                 streams = data.get("data")
-                return len(streams) > 0 # Retorna True se a lista não estiver vazia.
+                return len(streams) > 0
