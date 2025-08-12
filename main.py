@@ -1,138 +1,79 @@
 import os
-import sys
-import threading
-import asyncio
 import logging
-import aiohttp
-import json
-from datetime import datetime
 from flask import Flask, jsonify
+from threading import Thread
+import asyncio
+from discord_bot import bot as discord_bot
+from data_manager import load_data_from_drive_if_exists
 from drive_service import GoogleDriveService
 from twitch_api import TwitchAPI
 from youtube_api import YouTubeAPI
-from data_manager import load_data_from_drive_if_exists, save_data, get_data
-from discord_bot import bot
+import aiohttp
 
-# Configuração do logger antes de qualquer uso
+# Configuração do logger
+logging.basicConfig(level=logging.INFO, format='[%(asctime)s] [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 logger = logging.getLogger("T-800")
 
-def configure_logging():
-    """Configura o sistema de logging"""
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s | %(levelname)s | T-800 | %(message)s",
-        handlers=[
-            logging.FileHandler("t800_system.log"),
-            logging.StreamHandler()
-        ]
-    )
-
-# Configuração T-800
-os.environ.setdefault('DISABLE_VOICE', 'true')
-print("╔════════════════════════════════════════════╗")
-print("║        SISTEMA T-800 INICIALIZANDO         ║")
-print("║    Versão 2.0 - Monitoramento Ativo        ║")
-print("╚════════════════════════════════════════════╝")
-
-configure_logging()
-
-REQUIRED_ENV = [
-    "DISCORD_TOKEN", "TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET",
-    "YOUTUBE_API_KEY",
-    "DRIVE_FOLDER_ID", "DRIVE_PRIVATE_KEY_ID", "DRIVE_PRIVATE_KEY",
-    "DRIVE_CLIENT_ID"
-]
-
-if missing := [var for var in REQUIRED_ENV if var not in os.environ]:
-    logger.critical(f"⚠️ Alerta: As seguintes variáveis de ambiente estão faltando: {', '.join(missing)}")
-    sys.exit(1)
-
-# Inicializa Flask
+# Inicializa o servidor web Flask
 app = Flask(__name__)
 
-@app.route('/')
-def home():
-    uptime_seconds = (datetime.now() - bot.start_time).total_seconds() if hasattr(bot, 'start_time') else 0
-    hours, remainder = divmod(uptime_seconds, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    
-    bot_name = bot.user.name if bot.user else "Bot não conectado"
-    bot_id = str(bot.user.id) if bot.user else "N/A"
-    
-    return jsonify({
-        "status": "online",
-        "bot_name": bot_name,
-        "uptime": f"{int(hours)}h {int(minutes)}m {int(seconds)}s",
-        "discord_id": bot_id
-    })
+# Configuração do bot
+DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN")
+DRIVE_SERVICE_KEY = os.environ.get("DRIVE_SERVICE_KEY")
+TWITCH_CLIENT_ID = os.environ.get("TWITCH_CLIENT_ID")
+TWITCH_CLIENT_SECRET = os.environ.get("TWITCH_CLIENT_SECRET")
+YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY")
 
+if not DISCORD_TOKEN:
+    logger.critical("❌ Variável de ambiente DISCORD_TOKEN não encontrada. O bot não pode ser iniciado.")
+    exit()
+
+# Rota para o ping do Render
 @app.route('/ping')
 def ping():
-    return jsonify({"status": "pong"})
+    logger.info("✅ Ping recebido! Servidor está online.")
+    return jsonify({"status": "online"}), 200
 
-async def initialize_data():
-    """Inicializa o sistema de dados e o Google Drive"""
-    try:
-        drive_service = GoogleDriveService()
-        if drive_service.is_authenticated():
-            await load_data_from_drive_if_exists(drive_service)
-        else:
-            logger.warning("⚠️ Serviço do Google Drive não autenticado. Salvando dados localmente.")
-            await load_data_from_drive_if_exists(None)
-        return drive_service
-    except Exception as e:
-        logger.error(f"❌ Falha na inicialização do Drive: {e}")
-        with open("streamers.json", "w") as f:
-            json.dump({
-                "streamers": {},
-                "monitored_users": {
-                    "twitch": {},
-                    "youtube": {}
-                }
-            }, f, indent=2)
-        logger.info("Novo arquivo de dados criado")
-    
-    return None
+def run_flask_server():
+    """Inicia o servidor Flask em uma thread separada."""
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port, debug=False)
 
-async def main_async():
-    try:
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
-            # Inicializa APIs
-            bot.twitch_api = TwitchAPI(
-                session,
-                os.environ["TWITCH_CLIENT_ID"],
-                os.environ["TWITCH_CLIENT_SECRET"]
-            )
-            bot.youtube_api = YouTubeAPI(
-                session,
-                os.environ["YOUTUBE_API_KEY"]
-            )
-            
-            # Inicializa sistema de dados
-            bot.drive_service = await initialize_data()
-            
-            # Inicia servidor web
-            threading.Thread(
-                target=lambda: app.run(
-                    host='0.0.0.0',
-                    port=int(os.environ.get("PORT", 8080)),
-                    use_reloader=False
-                ),
-                daemon=True
-            ).start()
+async def main():
+    """Função principal para inicializar o bot e as APIs."""
+    logger.info("🤖 Iniciando sistema T-800...")
 
-            logger.info("Conectando à rede Discord...")
-            await bot.start(os.environ["DISCORD_TOKEN"])
+    # Inicializa o Google Drive Service se a chave estiver disponível
+    if DRIVE_SERVICE_KEY:
+        try:
+            drive_service = GoogleDriveService(DRIVE_SERVICE_KEY)
+            discord_bot.drive_service = drive_service
+            logger.info("✅ Google Drive Service inicializado.")
+        except Exception as e:
+            logger.error(f"❌ Falha ao inicializar o Google Drive Service: {e}")
+            discord_bot.drive_service = None
+    else:
+        logger.warning("⚠️ Variável de ambiente DRIVE_SERVICE_KEY não encontrada. O bot não salvará dados no Google Drive.")
+        discord_bot.drive_service = None
 
-    except Exception as e:
-        logger.critical(f"FALHA CATASTRÓFICA: {str(e)}")
-        raise
+    # Carrega os dados existentes do Drive ou localmente
+    await load_data_from_drive_if_exists(discord_bot.drive_service)
+
+    # Inicia as APIs
+    async with aiohttp.ClientSession() as session:
+        discord_bot.twitch_api = TwitchAPI(session, TWITCH_CLIENT_ID, TWITCH_CLIENT_SECRET)
+        discord_bot.youtube_api = YouTubeAPI(session, YOUTUBE_API_KEY)
+
+        # Inicia o bot
+        await discord_bot.start(DISCORD_TOKEN)
 
 if __name__ == '__main__':
+    # Roda o servidor Flask em uma thread separada
+    server_thread = Thread(target=run_flask_server)
+    server_thread.start()
+
+    # Roda o bot em loop de eventos assíncrono
     try:
-        asyncio.run(main_async())
-    except KeyboardInterrupt:
-        logger.info("Missão interrompida pelo usuário")
+        asyncio.run(main())
     except Exception as e:
-        logger.error(f"ERRO: {str(e)}")
-        sys.exit(1)
+        logger.critical(f"❌ Falha crítica na execução principal: {e}")
