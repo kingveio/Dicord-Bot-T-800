@@ -54,38 +54,30 @@ class DriveService:
             return None
 
 async def load_or_create_data(drive_service) -> dict:
+    DEFAULT_DATA = {"monitored_users": {"twitch": {}, "youtube": {}}}
+    file_name = "streamers.json"
+    
     try:
-        data = {"monitored_users": {"twitch": {}, "youtube": {}}}
-        file_name = "streamers.json"
-        
         # Tenta carregar localmente primeiro
         if os.path.exists(file_name):
             with open(file_name, "r") as f:
                 return json.load(f)
                 
-        # Se não existir localmente, tenta do Drive
+        # Tenta do Google Drive se disponível
         if drive_service and drive_service.service:
-            file_info = drive_service.find_file(file_name)
-            if file_info:
-                request = drive_service.service.files().get_media(fileId=file_info['id'])
-                with open(file_name, "wb") as f:
-                    downloader = MediaIoBaseDownload(f, request)
-                    while not downloader.next_chunk()[1]: pass
+            if drive_service.download_file(file_name, file_name):
                 with open(file_name, "r") as f:
                     return json.load(f)
         
-        # Se não existir em nenhum lugar, cria novo
+        # Cria novo arquivo
         with open(file_name, "w") as f:
-            json.dump(data, f, indent=2)
+            json.dump(DEFAULT_DATA, f, indent=2)
             
         if drive_service and drive_service.service:
-            try:
-                drive_service.upload_file(file_name, file_name)
-            except Exception as e:
-                logger.warning(f"⚠️ Falha ao enviar para o Drive: {e}")
-        
-        return data
+            drive_service.upload_file(file_name, file_name)
+            
+        return DEFAULT_DATA
         
     except Exception as e:
-        logger.critical(f"❌ Falha crítica: {e}")
-        return {"monitored_users": {"twitch": {}, "youtube": {}}}  # Fallback
+        logger.error(f"❌ Falha ao carregar dados: {e}")
+        return DEFAULT_DATA
