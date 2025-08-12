@@ -3,7 +3,6 @@ import discord
 from discord.ext import commands, tasks
 from services.twitch_api import TwitchAPI
 from services.youtube_api import YouTubeAPI
-from services.discord_service import DiscordService
 from data.data_manager import DataManager
 
 class LiveMonitor(commands.Cog):
@@ -12,7 +11,6 @@ class LiveMonitor(commands.Cog):
         self.twitch_api = TwitchAPI()
         self.youtube_api = YouTubeAPI()
         self.data_manager = DataManager()
-        self.discord_service = DiscordService(bot)
         self.monitoring_task.start()
 
     def cog_unload(self):
@@ -25,7 +23,6 @@ class LiveMonitor(commands.Cog):
 
     @tasks.loop(minutes=5)
     async def monitoring_task(self):
-        # Ciclo de vigilância. Verificando todos os servidores.
         print("T-800: Iniciando ciclo de escaneamento de lives em todos os servidores.")
         
         for guild in self.bot.guilds:
@@ -49,20 +46,17 @@ class LiveMonitor(commands.Cog):
 
                 is_live = False
 
-                # Verificando Twitch
                 if channels.get("twitch"):
                     if await self.twitch_api.is_live(channels["twitch"]):
                         is_live = True
                         print(f"T-800: Twitch live detectada para {member.name} em {guild.name}.")
 
-                # Verificando YouTube
                 if channels.get("youtube") and not is_live:
                     channel_id = await self.youtube_api.get_channel_id(channels["youtube"])
                     if channel_id and await self.youtube_api.is_live(channel_id):
                         is_live = True
                         print(f"T-800: YouTube live detectada para {member.name} em {guild.name}.")
 
-                # Atribuir/Remover o cargo
                 if is_live:
                     if live_role not in member.roles:
                         await member.add_roles(live_role)
@@ -74,4 +68,3 @@ class LiveMonitor(commands.Cog):
 
 def setup(bot):
     bot.add_cog(LiveMonitor(bot))
-    print("T-800: Módulo de vigilância online.")
