@@ -55,22 +55,37 @@ class DriveService:
 
 async def load_or_create_data(drive_service) -> dict:
     try:
-        # Tenta baixar do Drive
-        if drive_service and drive_service.find_file("streamers.json"):
-            drive_service.download_file("streamers.json", "streamers.json")
+        data = {"monitored_users": {"twitch": {}, "youtube": {}}}
+        file_name = "streamers.json"
         
-        # Carrega ou cria novo
-        if os.path.exists("streamers.json"):
-            with open("streamers.json", "r") as f:
+        # Tenta carregar localmente primeiro
+        if os.path.exists(file_name):
+            with open(file_name, "r") as f:
                 return json.load(f)
-        else:
-            data = {"monitored_users": {"twitch": {}, "youtube": {}}}
-            with open("streamers.json", "w") as f:
-                json.dump(data, f)
-            if drive_service:
-                drive_service.upload_file("streamers.json", "streamers.json")
-            return data
+                
+        # Se não existir localmente, tenta do Drive
+        if drive_service and drive_service.service:
+            file_info = drive_service.find_file(file_name)
+            if file_info:
+                request = drive_service.service.files().get_media(fileId=file_info['id'])
+                with open(file_name, "wb") as f:
+                    downloader = MediaIoBaseDownload(f, request)
+                    while not downloader.next_chunk()[1]: pass
+                with open(file_name, "r") as f:
+                    return json.load(f)
+        
+        # Se não existir em nenhum lugar, cria novo
+        with open(file_name, "w") as f:
+            json.dump(data, f, indent=2)
             
+        if drive_service and drive_service.service:
+            try:
+                drive_service.upload_file(file_name, file_name)
+            except Exception as e:
+                logger.warning(f"⚠️ Falha ao enviar para o Drive: {e}")
+        
+        return data
+        
     except Exception as e:
         logger.critical(f"❌ Falha crítica: {e}")
-        raise
+        return {"monitored_users": {"twitch": {}, "youtube": {}}}  # Fallback
