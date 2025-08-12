@@ -4,13 +4,12 @@ from discord.ext import commands
 import os
 from config import DISCORD_TOKEN
 
-# Definindo as intenções do bot. Ele precisa ver quem está "ao vivo".
 intents = discord.Intents.default()
 intents.members = True
 intents.presences = True
-intents.message_content = True # Adicionar esta linha para evitar o aviso
+intents.message_content = True # Mantenha esta linha para compatibilidade com comandos de prefixo, se quiser
 
-# Criando a instância do bot. O prefixo de comando é "t-800 ".
+# Não é necessário um prefixo para slash commands
 bot = commands.Bot(command_prefix="t-800 ", intents=intents)
 
 # O T-800 precisa de sua missão. Carregando os módulos de combate (cogs).
