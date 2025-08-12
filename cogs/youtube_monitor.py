@@ -45,8 +45,20 @@ class YouTubeMonitor(commands.Cog):
                     if not member: continue
 
                     live_role = discord.utils.get(guild.roles, name=self.live_role_name)
-                    if not live_role: continue
-
+                    if not live_role:
+                        logger.warning(f"Cargo '{self.live_role_name}' não encontrado na guilda {guild.name}. Tentando criar...")
+                        try:
+                            # Tenta criar o cargo com a cor vermelha por padrão
+                            live_role = await guild.create_role(
+                                name=self.live_role_name,
+                                color=discord.Color.red(),
+                                reason="Cargo criado automaticamente para monitoramento de lives"
+                            )
+                            logger.info(f"✅ Cargo '{self.live_role_name}' criado com sucesso.")
+                        except discord.Forbidden:
+                            logger.error(f"❌ O bot não tem permissão para criar cargos na guilda {guild.name}. Alerta: Falha na operação.")
+                            continue
+                    
                     if is_live:
                         if live_role not in member.roles:
                             await member.add_roles(live_role, reason="Canal do YouTube está ao vivo")
@@ -69,20 +81,12 @@ class YouTubeMonitor(commands.Cog):
         """Adiciona um canal do YouTube à lista de monitoramento."""
         await interaction.response.defer(ephemeral=True)
         try:
-            # Novo passo: valida o nome do canal antes de salvar
-            is_valid = await self.bot.youtube_api.validate_channel_name(nome)
-            if not is_valid:
-                await interaction.edit_original_response(
-                    content=f"⚠️ O canal '{nome}' não pôde ser encontrado. Por favor, verifique o nome. Alerta: Falha na operação."
-                )
-                return
-
             data = await self.bot.get_data()
             response_content = ""
 
             if "youtube" not in data["monitored_users"]:
                 data["monitored_users"]["youtube"] = {}
-            
+                
             if nome.lower() in data["monitored_users"]["youtube"]:
                 response_content = f"⚠️ {nome} já é um alvo! Alerta: Falha na operação."
             else:
