@@ -57,20 +57,29 @@ class YouTubeMonitor(commands.Cog):
             
     # ========== COMANDOS DE BARRA ========== #
 
-    @app_commands.command(name="adicionar_youtube", description="Adiciona um canal do YouTube para monitoramento.")
+@app_commands.command(name="adicionar_youtube", description="Adiciona um canal do YouTube para monitoramento.")
     @app_commands.describe(
         nome="Nome do canal do YouTube (ex: alanzoka)",
         discord_id="ID do usuário do Discord a ser marcado"
     )
     async def adicionar_youtube(self, interaction: discord.Interaction, nome: str, discord_id: str):
         """Comando de barra para adicionar um canal do YouTube à lista de monitoramento."""
-        await interaction.response.defer(ephemeral=True)
+        try:
+            # Tenta responder imediatamente para evitar o timeout
+            await interaction.response.defer(ephemeral=True)
+        except discord.NotFound:
+            # Se a interação já expirou, a gente não consegue responder, então apenas logamos o erro
+            logger.error("❌ Falha ao deferir a interação. Token expirado. O bot está lento.", exc_info=True)
+            return
+
         logger.info(f"Comando '/adicionar_youtube' acionado por {interaction.user.name} ({interaction.user.id}).")
 
+        # ... o resto do seu código permanece o mesmo
         if not self.bot.youtube_api:
             await interaction.followup.send("⚠️ O serviço do YouTube não está disponível. Tente novamente mais tarde.")
             return
-
+        
+        # ... o resto do seu código
         channel_name = nome.lower().strip()
         
         try:
@@ -82,7 +91,8 @@ class YouTubeMonitor(commands.Cog):
             if channel_name in data["monitored_users"]["youtube"]:
                 await interaction.followup.send(f"❌ O canal **{channel_name}** já está sendo monitorado.")
                 return
-
+            
+            # ... resto da lógica
             data["monitored_users"]["youtube"][channel_name] = {
                 "guild_id": interaction.guild_id,
                 "added_by": discord_id,
