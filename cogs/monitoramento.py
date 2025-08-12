@@ -35,23 +35,47 @@ class Monitoramento(commands.Cog):
             # Monitorar Twitch
             if "twitch" in data["monitored_users"] and data["monitored_users"]["twitch"]:
                 streamers = list(data["monitored_users"]["twitch"].keys())
+                logger.debug(f"Verificando os seguintes streamers: {streamers}")
+                
                 live_status = await self.bot.twitch_api.check_live_channels(streamers)
 
                 for streamer_name, is_live in live_status.items():
                     user_info = data["monitored_users"]["twitch"].get(streamer_name.lower())
-                    if not user_info: continue
+                    if not user_info:
+                        logger.warning(f"Informações de usuário não encontradas para {streamer_name}")
+                        continue
 
                     guild = self.bot.get_guild(user_info.get("guild_id"))
-                    member = guild.get_member(user_info.get("added_by")) if guild else None
-                    if not member: continue
+                    if not guild:
+                        logger.warning(f"Guilda com ID {user_info.get('guild_id')} não encontrada.")
+                        continue
+                    
+                    member = guild.get_member(user_info.get("added_by"))
+                    if not member:
+                        logger.warning(f"Membro com ID {user_info.get('added_by')} não encontrado na guilda {guild.name}.")
+                        continue
 
                     live_role = discord.utils.get(guild.roles, name=self.live_role_name)
-                    if not live_role: continue
-
+                    if not live_role:
+                        logger.warning(f"Cargo '{self.live_role_name}' não encontrado na guilda {guild.name}. Tentando criar...")
+                        try:
+                            # Tenta criar o cargo com a cor vermelha por padrão
+                            live_role = await guild.create_role(
+                                name=self.live_role_name,
+                                color=discord.Color.red(),
+                                reason="Cargo criado automaticamente para monitoramento de lives"
+                            )
+                            logger.info(f"✅ Cargo '{self.live_role_name}' criado com sucesso.")
+                        except discord.Forbidden:
+                            logger.error(f"❌ O bot não tem permissão para criar cargos na guilda {guild.name}. Alerta: Falha na operação.")
+                            continue
+                    
                     if is_live:
                         if live_role not in member.roles:
                             await member.add_roles(live_role, reason="Streamer está ao vivo")
                             logger.info(f"✅ Cargo 'AO VIVO' adicionado para {member.name} (Twitch). Missão concluída.")
+                        else:
+                            logger.info(f"Streamer {member.name} já tem o cargo 'AO VIVO'.")
                     else:
                         if live_role in member.roles:
                             await member.remove_roles(live_role, reason="Streamer não está mais ao vivo")
