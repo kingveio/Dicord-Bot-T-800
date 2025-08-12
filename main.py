@@ -29,15 +29,20 @@ if not DISCORD_TOKEN:
     exit()
 
 # Rota para o ping do Render
+
 @app.route('/ping')
 def ping():
-    logger.info("✅ Ping recebido! Servidor está online.")
-    return jsonify({"status": "online"}), 200
+    return jsonify({'status': 'online'})
 
-def run_flask_server():
-    """Inicia o servidor Flask em uma thread separada."""
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port, debug=False)
+START_TIME = datetime.now()
+
+@app.route('/status')
+def system_status():
+    return jsonify({
+        "status": "operacional",
+        "uptime": str(datetime.now() - START_TIME),
+        "mission": "monitorar_streams"
+    })
 
 async def main():
     """Função principal para inicializar o bot e as APIs."""
