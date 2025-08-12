@@ -15,4 +15,3 @@ class TwitchCommands(commands.Cog):
         await ctx.send(f"Alvo '{twitch_username}' adicionado à lista de vigilância da Twitch para este servidor. Eu voltarei a verificar.")
 
 def setup(bot):
-    bot.add_cog(TwitchCommands(bot))
