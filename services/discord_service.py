@@ -25,4 +25,4 @@ class DiscordService:
         role = self.guild.get_role(role_id)
         if role and role in member.roles:
             await member.remove_roles(role)
-            print(f"T-800: Cargo {role.name} removido de {member.name}.")tets
+            print(f"T-800: Cargo {role.name} removido de {member.name}.")
