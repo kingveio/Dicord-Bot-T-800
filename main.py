@@ -36,7 +36,17 @@ class HealthServer:
         if self.site:
             await self.site.stop()
         await self.runner.cleanup()
-
+        @bot.command()
+        @commands.is_owner()
+    async def sync(ctx):
+    """Sincroniza os comandos slash com o Discord"""
+    try:
+        synced = await bot.tree.sync()
+        await ctx.send(f"✅ {len(synced)} comandos sincronizados!")
+    except Exception as e:
+        await ctx.send(f"❌ Erro ao sincronizar: {e}")
+        logger.error(f"Erro na sincronização: {e}", exc_info=True)
+        
 class T800Bot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
