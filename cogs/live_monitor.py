@@ -1,4 +1,3 @@
-# T-800: Módulo de vigilância. Escaneando alvos em múltiplos servidores.
 import discord
 from discord.ext import commands, tasks
 from services.twitch_api import TwitchAPI
@@ -66,5 +65,5 @@ class LiveMonitor(commands.Cog):
                         await member.remove_roles(live_role)
                         print(f"T-800: Cargo {live_role.name} removido de {member.name}.")
 
-def setup(bot):
-    bot.add_cog(LiveMonitor(bot))
+async def setup(bot):
+    await bot.add_cog(LiveMonitor(bot))
