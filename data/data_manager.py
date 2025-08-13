@@ -29,38 +29,46 @@ class DataManager:
             print(f"⚠️ Erro ao configurar Google Drive: {e}")
 
     def _load_or_initialize_data(self) -> Dict:
-        default_data = {
-            "guilds": {},
-            "metadata": {
-                "version": "3.0",
-                "created_at": datetime.now().isoformat(),
-                "last_backup": None
-            }
+    """Carrega ou cria o arquivo de dados com estrutura padrão"""
+    default_data = {
+        "guilds": {},
+        "metadata": {
+            "version": "3.0",
+            "created_at": datetime.now().isoformat(),
+            "last_backup": None
         }
-        
-        if not os.path.exists(self.filepath):
-            self._save_data(default_data)
-            return default_data
+    }
+    
+    if not os.path.exists(self.filepath):
+        self._save_data(default_data)  # Agora vai funcionar
+        return default_data
 
-        try:
-            with open(self.filepath, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                if "metadata" not in data:
-                    data["metadata"] = default_data["metadata"]
-                return data
-        except Exception as e:
-            print(f"⚠️ Erro ao carregar dados: {e}")
-            self._create_backup("corrupted")
-            return default_data
+    try:
+        with open(self.filepath, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            if "metadata" not in data:
+                data["metadata"] = default_data["metadata"]
+                self._save_data(data)  # Corrigido aqui também
+            return data
+    except Exception as e:
+        print(f"⚠️ Erro ao carregar dados: {e}")
+        self._create_backup("corrupted")
+        self._save_data(default_data)
+        return default_data
 
-    def _save_data(self):
-        """Salva os dados com timestamp de atualização"""
-        self.data["metadata"]["last_updated"] = datetime.now().isoformat()
-        try:
-            with open(self.filepath, 'w', encoding='utf-8') as f:
-                json.dump(self.data, f, indent=4, ensure_ascii=False)
-        except Exception as e:
-            print(f"❌ Falha ao salvar dados: {e}")
+     def _save_data(self, data: Optional[dict] = None):
+    """Salva os dados no arquivo JSON"""
+    if data is None:
+        data = self.data
+    
+    data["metadata"]["last_updated"] = datetime.now().isoformat()
+    
+    try:
+        with open(self.filepath, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+    except Exception as e:
+        print(f"❌ Erro ao salvar dados: {e}")
+        raise
 
     def _create_backup(self, reason: str) -> str:
         """Cria um backup local com timestamp"""
