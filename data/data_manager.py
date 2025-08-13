@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 class DataManager:
     def __init__(self):
+        self.bot = None  # Será definido pelo bot
         self.data_dir = Path("data")
         self.filepath = self.data_dir / "streamers.json"
         self._data: Dict[str, Any] = {
@@ -55,19 +56,26 @@ class DataManager:
                 logger.error(f"Falha ao salvar dados: {e}")
                 raise
 
-    def get_guild(self, guild_id: int) -> Dict[str, Any]:
-        """Obtém ou cria dados de uma guilda"""
+    def get_guild(self, guild_id: int):
+        """Método seguro para obter dados da guilda"""
+        if not hasattr(self, '_data'):
+            raise RuntimeError("Dados não carregados")
+        
         guild_id_str = str(guild_id)
         if guild_id_str not in self._data["guilds"]:
-            self._data["guilds"][guild_id_str] = {
-                "config": {
-                    "live_role_id": None,
-                    "notify_channel_id": None,
-                    "backup_enabled": True
-                },
-                "users": {},
-                "created_at": datetime.now().isoformat()
-            }
+            self._create_default_guild(guild_id)
+            
+        return self._data["guilds"][guild_id_str]
+    
+    def _create_default_guild(self, guild_id):
+        guild_id_str = str(guild_id)
+        self._data["guilds"][guild_id_str] = {
+            "config": {
+                "live_role_id": None,
+                "notify_channel_id": None
+            },
+            "users": {}
+        }
         return self._data["guilds"][guild_id_str]
 
     async def update_guild_config(self, guild_id: int, **kwargs) -> None:
