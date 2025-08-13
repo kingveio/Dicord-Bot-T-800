@@ -5,6 +5,7 @@ import discord
 from discord.ext import commands
 from config import Config
 from utils.logging import setup_logging
+from data.data_manager import DataManager  # Adicione esta linha
 
 logger = logging.getLogger(__name__)
 
@@ -20,15 +21,20 @@ class Bot(commands.Bot):
             help_command=None
         )
         
-        # Adiciona o keep-alive como tarefa de fundo
+        # Inicializa o DataManager
+        self.data_manager = DataManager()
         self.keep_alive_task = None
 
     async def setup_hook(self):
         """Configura tarefas de fundo quando o bot está inicializando"""
-        self.keep_alive_task = asyncio.create_task(self.keep_alive())
-        
-        # Carrega todos os cogs
+        # Carrega os cogs primeiro
         await self.load_cogs()
+        
+        # Inicializa o DataManager
+        await self.data_manager.load()
+        
+        # Inicia a tarefa keep-alive
+        self.keep_alive_task = asyncio.create_task(self.keep_alive())
 
     async def load_cogs(self):
         """Carrega todos os cogs automaticamente"""
