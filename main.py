@@ -12,6 +12,31 @@ from services.youtube_api import YouTubeAPI
 
 logger = logging.getLogger(__name__)
 
+class HealthServer:
+    def __init__(self):
+        self.app = web.Application()
+        self.app.add_routes([
+            web.get('/health', self.health_check),
+            web.get('/', self.health_check)
+        ])
+        self.runner = web.AppRunner(self.app)
+        self.site = None
+        self.port = 8080  # Porta alterada para 8080
+
+    async def health_check(self, request):
+        return web.Response(text="🤖 T-800 Online (Porta 8080)")
+
+    async def start(self):
+        await self.runner.setup()
+        self.site = web.TCPSite(self.runner, '0.0.0.0', self.port)
+        await self.site.start()
+        logger.info(f"✅ Health check rodando na porta {self.port}")
+
+    async def stop(self):
+        if self.site:
+            await self.site.stop()
+        await self.runner.cleanup()
+
 class T800Bot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
@@ -24,39 +49,28 @@ class T800Bot(commands.Bot):
             help_command=None
         )
         
-        # Inicializa o DataManager
         self.data_manager = DataManager()
-        self.data_manager.bot = self  # Permite acesso ao bot
-        
-        # Inicializa APIs
+        self.data_manager.bot = self
         self.twitch_api = TwitchAPI()
         self.youtube_api = YouTubeAPI()
-        
-        # Variáveis para health check
-        self.health_server = None
+        self.health_server = HealthServer()  # Servidor na porta 8080
         self.session = None
         self.keep_alive_task = None
 
     async def setup_hook(self):
-        """Configuração inicial assíncrona"""
         try:
-            # 1. Carrega dados primeiro
-            await self.data_manager.load()
+            # 1. Inicia health check na porta 8080
+            await self.health_server.start()
             
-            # 2. Configura health check
+            # 2. Configura HTTP client
             self.session = ClientSession(
                 timeout=ClientTimeout(total=10),
                 headers={'User-Agent': 'DiscordBot/1.0'}
             )
             
-            # 3. Carrega os cogs
-            cogs = [
-                "cogs.live_monitor",
-                "cogs.youtube",
-                "cogs.twitch",
-                "cogs.settings"
-            ]
-            
+            # 3. Carrega dados e extensões
+            await self.data_manager.load()
+            cogs = ["cogs.live_monitor", "cogs.youtube", "cogs.twitch", "cogs.settings"]
             for cog in cogs:
                 try:
                     await self.load_extension(cog)
@@ -64,10 +78,9 @@ class T800Bot(commands.Bot):
                 except Exception as e:
                     logger.error(f"❌ Falha ao carregar {cog}: {e}")
             
-            # 4. Configura keep-alive se estiver no Render
+            # 4. Keep-alive para Render
             if Config.is_render():
                 self.keep_alive_task = asyncio.create_task(self.keep_alive())
-                logger.info("🔵 Ambiente Render detectado")
                 
         except Exception as e:
             logger.critical(f"🚨 Falha no setup: {e}", exc_info=True)
@@ -76,60 +89,34 @@ class T800Bot(commands.Bot):
     async def keep_alive(self):
         """Mantém o bot ativo no Render"""
         await self.wait_until_ready()
-        service_url = f"https://{Config.RENDER_SERVICE_NAME}.onrender.com"
-        
         while not self.is_closed():
             try:
-                async with self.session.get(f"{service_url}/health") as resp:
-                    status = "✅" if resp.status == 200 else "⚠️"
-                    logger.debug(f"{status} Keep-alive ping: {resp.status}")
+                async with self.session.get(f"http://localhost:8080/health") as resp:
+                    if resp.status != 200:
+                        logger.warning(f"⚠️ Health check falhou: {resp.status}")
             except Exception as e:
-                logger.warning(f"⚠️ Keep-alive falhou: {e}")
-            await asyncio.sleep(300)  # 5 minutos
+                logger.warning(f"⚠️ Keep-alive error: {e}")
+            await asyncio.sleep(60)  # Verifica a cada 1 minuto
 
     async def close(self):
-        """Limpeza ao desligar o bot"""
         logger.info("🛑 Desligando bot...")
-        
-        # 1. Cancela tarefa de keep-alive
         if self.keep_alive_task:
             self.keep_alive_task.cancel()
-            try:
-                await self.keep_alive_task
-            except asyncio.CancelledError:
-                pass
-        
-        # 2. Fecha sessão HTTP
-        if self.session and not self.session.closed:
+        if self.session:
             await self.session.close()
-        
-        # 3. Fecha conexão com Discord
+        await self.health_server.stop()
         await super().close()
-        logger.info("👋 Bot desligado com sucesso")
+        logger.info("👋 Bot desligado")
 
 async def main():
     try:
-        # Valida as configurações primeiro
         Config.validate()
         setup_logging(Config.LOG_LEVEL)
-        
-        logger.info("✅ Todas as configurações validadas com sucesso")
-        
-        # Inicializa e inicia o bot
         bot = T800Bot()
         await bot.start(Config.DISCORD_TOKEN)
-        
-    except ValueError as e:
-        logger.critical(f"❌ Erro de configuração: {e}")
-        raise
     except Exception as e:
-        logger.critical(f"💥 ERRO FATAL: {e}", exc_info=True)
+        logger.critical(f"💥 ERRO: {e}", exc_info=True)
         raise
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        logger.info("🛑 Bot interrompido pelo usuário")
-    except Exception as e:
-        logger.critical(f"💥 ERRO NÃO TRATADO: {e}", exc_info=True)
+    asyncio.run(main())
