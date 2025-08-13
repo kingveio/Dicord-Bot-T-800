@@ -8,9 +8,11 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from googleapiclient.errors import HttpError
+from data.data_manager import DataManager
 
 class DataManager:
     def __init__(self, filepath: str = "data/streamers.json"):
+        """Inicializa o gerenciador de dados"""
         self.filepath = filepath
         self.backup_dir = "data/backups"
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
@@ -19,7 +21,7 @@ class DataManager:
         self.data = self._load_or_initialize_data()
 
     def _setup_google_drive(self):
-        """Configura as credenciais do Google Drive a partir de variáveis de ambiente"""
+        """Configura as credenciais do Google Drive"""
         try:
             creds_base64 = os.getenv('GOOGLE_CREDENTIALS')
             if creds_base64:
@@ -29,46 +31,44 @@ class DataManager:
             print(f"⚠️ Erro ao configurar Google Drive: {e}")
 
     def _load_or_initialize_data(self) -> Dict:
-    """Carrega ou cria o arquivo de dados com estrutura padrão"""
-    default_data = {
-        "guilds": {},
-        "metadata": {
-            "version": "3.0",
-            "created_at": datetime.now().isoformat(),
-            "last_backup": None
+        """Carrega ou cria o arquivo de dados com estrutura padrão"""
+        default_data = {
+            "guilds": {},
+            "metadata": {
+                "version": "3.0",
+                "created_at": datetime.now().isoformat(),
+                "last_backup": None
+            }
         }
-    }
-    
-    if not os.path.exists(self.filepath):
-        self._save_data(default_data)  # Agora vai funcionar
-        return default_data
+        
+        if not os.path.exists(self.filepath):
+            self._save_data(default_data)
+            return default_data
 
-    try:
-        with open(self.filepath, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            if "metadata" not in data:
-                data["metadata"] = default_data["metadata"]
-                self._save_data(data)  # Corrigido aqui também
-            return data
-    except Exception as e:
-        print(f"⚠️ Erro ao carregar dados: {e}")
-        self._create_backup("corrupted")
-        self._save_data(default_data)
-        return default_data
+        try:
+            with open(self.filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                if "metadata" not in data:
+                    data["metadata"] = default_data["metadata"]
+                    self._save_data(data)
+                return data
+        except Exception as e:
+            print(f"⚠️ Erro ao carregar dados: {e}")
+            self._create_backup("corrupted")
+            self._save_data(default_data)
+            return default_data
 
-     def _save_data(self, data: Optional[dict] = None):
-    """Salva os dados no arquivo JSON"""
-    if data is None:
-        data = self.data
-    
-    data["metadata"]["last_updated"] = datetime.now().isoformat()
-    
-    try:
-        with open(self.filepath, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
-    except Exception as e:
-        print(f"❌ Erro ao salvar dados: {e}")
-        raise
+    def _save_data(self, data: Optional[dict] = None):
+        """Salva os dados no arquivo JSON"""
+        save_data = data if data is not None else self.data
+        save_data["metadata"]["last_updated"] = datetime.now().isoformat()
+        
+        try:
+            with open(self.filepath, 'w', encoding='utf-8') as f:
+                json.dump(save_data, f, indent=4, ensure_ascii=False)
+        except Exception as e:
+            print(f"❌ Erro ao salvar dados: {e}")
+            raise
 
     def _create_backup(self, reason: str) -> str:
         """Cria um backup local com timestamp"""
