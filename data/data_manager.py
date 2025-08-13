@@ -11,34 +11,51 @@ from googleapiclient.http import MediaFileUpload
 from googleapiclient.errors import HttpError
 from google_auth_oauthlib.flow import InstalledAppFlow
 
+# A classe DataManager foi ajustada para ter uma função de backup funcional para o Google Shared Drive.
 class DataManager:
+    """
+    Gerencia os dados de streamers e configurações de guildas para um bot do Discord,
+    incluindo a funcionalidade de backup para o Google Drive.
+    """
     def __init__(self, filepath: str = "data/streamers.json"):
-        """Inicializa o gerenciador de dados"""
+        """
+        Inicializa o gerenciador de dados, configurando diretórios e o Google Drive.
+        """
         self.filepath = filepath
         self.backup_dir = "data/backups"
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         os.makedirs(self.backup_dir, exist_ok=True)
+        # Tenta configurar as credenciais do Google Drive a partir de uma variável de ambiente.
         self._setup_google_drive()
+        # Carrega ou inicializa os dados.
         self.data = self._load_or_initialize_data()
 
     def _setup_google_drive(self):
-        """Configura as credenciais do Google Drive"""
+        """
+        Decodifica as credenciais da conta de serviço do Google Drive de uma
+        variável de ambiente Base64 e salva-as em um arquivo local.
+        """
+        print("🔧 Configurando credenciais do Google Drive...")
+        creds_base64 = os.getenv('GOOGLE_CREDENTIALS')
+        if not creds_base64:
+            print("⚠️ Variável de ambiente 'GOOGLE_CREDENTIALS' não encontrada.")
+            return
+
         try:
-            creds_base64 = os.getenv('GOOGLE_CREDENTIALS')
-            if creds_base64:
-                try:
-                    decoded = base64.b64decode(creds_base64)
-                    with open("credentials.json", "wb") as f:
-                        f.write(decoded)
-                except (binascii.Error, ValueError) as e:
-                    print(f"⚠️ Credenciais do Google Drive inválidas (erro Base64): {e}")
-                    return None
+            # Tenta decodificar a string Base64.
+            decoded = base64.b64decode(creds_base64)
+            with open("credentials.json", "wb") as f:
+                f.write(decoded)
+            print("✅ Credenciais do Google Drive configuradas com sucesso.")
+        except (binascii.Error, ValueError) as e:
+            print(f"❌ Erro ao decodificar as credenciais Base64: {e}")
         except Exception as e:
-            print(f"⚠️ Erro ao configurar Google Drive: {e}")
-            return None
+            print(f"❌ Erro inesperado ao configurar Google Drive: {e}")
 
     def _load_or_initialize_data(self) -> Dict:
-        """Carrega ou cria o arquivo de dados com estrutura padrão"""
+        """
+        Carrega o arquivo de dados JSON ou cria um novo com a estrutura padrão.
+        """
         default_data = {
             "guilds": {},
             "metadata": {
@@ -71,7 +88,9 @@ class DataManager:
             return default_data
 
     def _save_data(self, data: Optional[dict] = None):
-        """Salva os dados no arquivo JSON"""
+        """
+        Salva os dados no arquivo JSON.
+        """
         save_data = data if data is not None else self.data
         
         if not isinstance(save_data, dict):
@@ -87,34 +106,53 @@ class DataManager:
             raise
 
     def _create_backup(self, reason: str) -> str:
-        """Cria um backup local com timestamp"""
+        """
+        Cria um backup local com timestamp.
+        """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         backup_path = f"{self.backup_dir}/backup_{timestamp}_{reason}.json"
         try:
-            with open(self.filepath, 'r') as src, open(backup_path, 'w') as dst:
-                json.dump(json.load(src), dst, indent=4)
+            with open(self.filepath, 'r', encoding='utf-8') as src, open(backup_path, 'w', encoding='utf-8') as dst:
+                json.dump(json.load(src), dst, indent=4, ensure_ascii=False)
             return backup_path
         except Exception as e:
-            print(f"⚠️ Falha ao criar backup: {e}")
+            print(f"⚠️ Falha ao criar backup local: {e}")
             return ""
 
     def backup_to_drive(self) -> Dict:
-    """Versão corrigida para Shared Drives"""
-    result = {"success": False, "error": None}
-    
-    try:
-        # 1. Configuração do serviço
-        creds = service_account.Credentials.from_service_account_file(
-            "credentials.json",
-            scopes=['https://www.googleapis.com/auth/drive']
-        )
+        """
+        Faz upload do arquivo de dados para um Google Shared Drive usando
+        credenciais de conta de serviço.
+        """
+        result = {"success": False, "error": None}
+
+        # Verificação inicial de credenciais e variáveis de ambiente
+        if not os.path.exists("credentials.json"):
+            result["error"] = "Arquivo de credenciais não encontrado."
+            print("❌ Erro: credentials.json não existe.")
+            return result
         
-        # 2. Upload para Shared Drive
-        with build('drive', 'v3', credentials=creds) as service:
+        drive_folder_id = os.getenv('DRIVE_FOLDER_ID')
+        shared_drive_id = os.getenv('SHARED_DRIVE_ID')
+        if not drive_folder_id or not shared_drive_id:
+            result["error"] = "Variáveis de ambiente DRIVE_FOLDER_ID ou SHARED_DRIVE_ID não estão definidas."
+            print("❌ Erro: Variáveis de ambiente faltando.")
+            return result
+
+        try:
+            # 1. Configuração do serviço
+            creds = service_account.Credentials.from_service_account_file(
+                "credentials.json",
+                scopes=['https://www.googleapis.com/auth/drive']
+            )
+            service = build('drive', 'v3', credentials=creds)
+
+            # 2. Upload para Shared Drive
+            print("⬆️ Iniciando upload do backup para o Google Drive...")
             file_metadata = {
-                'name': f"backup_{datetime.now().strftime('%Y%m%d')}.json",
-                'parents': [os.getenv('DRIVE_FOLDER_ID')],
-                'driveId': os.getenv('SHARED_DRIVE_ID')
+                'name': f"backup_{datetime.now().strftime('%Y-%m-%d')}.json",
+                'parents': [drive_folder_id],
+                'driveId': shared_drive_id
             }
             
             media = MediaFileUpload(
@@ -125,21 +163,30 @@ class DataManager:
             file = service.files().create(
                 body=file_metadata,
                 media_body=media,
-                supportsAllDrives=True,
+                supportsAllDrives=True, # Essencial para Shared Drives
                 fields='id'
             ).execute()
             
             result["success"] = True
             result["file_id"] = file.get('id')
+            self.data["metadata"]["last_backup"] = datetime.now().isoformat()
+            self._save_data() # Atualiza o metadado no arquivo local.
+            print(f"✅ Backup enviado com sucesso! ID do arquivo: {file.get('id')}")
             
-    except HttpError as e:
-        result["error"] = f"Erro HTTP {e.status_code}: {e.reason}"
-    except Exception as e:
-        result["error"] = str(e)
-    
-    return result
+        except HttpError as e:
+            error_msg = f"Erro HTTP {e.resp.status}: {json.loads(e.content.decode('utf-8'))['error']['message']}"
+            result["error"] = error_msg
+            print(f"❌ Erro HTTP ao fazer backup: {error_msg}")
+        except Exception as e:
+            result["error"] = str(e)
+            print(f"❌ Erro inesperado ao fazer backup: {e}")
+        
+        return result
 
     def get_guild_data(self, guild_id: int) -> Dict:
+        """
+        Retorna os dados de uma guilda específica, criando-os se não existirem.
+        """
         guild_id_str = str(guild_id)
         if guild_id_str not in self.data["guilds"]:
             self.data["guilds"][guild_id_str] = {
@@ -160,6 +207,9 @@ class DataManager:
         platform: str,
         channel_id: str
     ) -> bool:
+        """
+        Vincula um canal de uma plataforma (Twitch/YouTube) a um usuário em uma guilda.
+        """
         try:
             guild_data = self.get_guild_data(guild.id)
             user_id_str = str(user.id)
@@ -190,6 +240,9 @@ class DataManager:
         user_id: int,
         platform: str
     ) -> bool:
+        """
+        Remove um canal de uma plataforma de um usuário.
+        """
         try:
             guild_data = self.get_guild_data(guild_id)
             user_id_str = str(user_id)
@@ -197,7 +250,8 @@ class DataManager:
             if user_id_str in guild_data["users"] and platform in guild_data["users"][user_id_str]:
                 del guild_data["users"][user_id_str][platform]
                 
-                if not guild_data["users"][user_id_str].get("twitch") and not guild_data["users"][user_id_str].get("youtube"):
+                # Se o usuário não tiver mais plataformas vinculadas, remove-o completamente.
+                if not any(key in guild_data["users"][user_id_str] for key in ["twitch", "youtube"]):
                     del guild_data["users"][user_id_str]
                 
                 self._save_data()
@@ -208,6 +262,9 @@ class DataManager:
             return False
 
     def get_user_platforms(self, guild_id: int, user_id: int) -> Dict:
+        """
+        Retorna as plataformas vinculadas a um usuário específico.
+        """
         try:
             guild_data = self.get_guild_data(guild_id)
             user_data = guild_data["users"].get(str(user_id), {})
