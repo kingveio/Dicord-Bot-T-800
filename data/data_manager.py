@@ -59,14 +59,16 @@ class DataManager:
     def _get_drive_file_id(self, file_name: str, folder_id: str) -> Optional[str]:
         """
         Procura o ID de um arquivo no Google Drive dentro de uma pasta específica.
-        Usa 'corpora=drive' para pesquisar em shared drives (drives compartilhados).
+        Usa 'corpora=drive' e 'driveId' para pesquisar em shared drives (drives compartilhados).
         """
         try:
+            # A busca em drives compartilhados exige o parâmetro driveId
             query = f"name='{file_name}' and '{folder_id}' in parents and trashed=false"
             response = self.drive_service.files().list(
                 q=query,
                 spaces='drive',
-                corpora='drive', # Adicionado para pesquisar em shared drives
+                corpora='drive', 
+                driveId=os.getenv('DRIVE_ID'), # Adicionado para corrigir o erro 403
                 fields='files(id)',
                 supportsAllDrives=True,
                 includeItemsFromAllDrives=True
