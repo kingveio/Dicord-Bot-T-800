@@ -5,14 +5,13 @@ import os
 from config import DISCORD_TOKEN
 from aiohttp import web
 
-# Definindo as intenções do bot. O T-800 precisa de permissão para ver
-# os membros, presenças e o conteúdo das mensagens (para comandos de prefixo).
+# Definindo as intenções do bot.
 intents = discord.Intents.default()
 intents.members = True
 intents.presences = True
 intents.message_content = True
 
-# Criando a instância do bot. O prefixo é "t-800 ".
+# Criando a instância do bot.
 bot = commands.Bot(command_prefix="t-800 ", intents=intents)
 
 # O T-800 precisa de sua missão. Carregando os módulos de combate (cogs).
@@ -21,6 +20,7 @@ async def on_ready():
     print(f'T-800 logado como {bot.user.name}. Alvo identificado.')
     
     # 1. Inicia o servidor web assim que o bot estiver pronto
+    #    Agora, o 'bot.loop' está disponível.
     bot.loop.create_task(start_webserver())
     
     # 2. Carrega os cogs
@@ -39,16 +39,9 @@ async def on_ready():
     except Exception as e:
         print(f"Falha ao sincronizar comandos: {e}")
 
-# "Hasta la vista, baby." (comando de desligamento)
-@bot.command(name="terminate")
-async def terminate(ctx):
-    if ctx.author.id == ctx.guild.owner_id:
-        await ctx.send("Terminando todos os processos. O T-800 está desativado.")
-        await bot.close()
-    else:
-        await ctx.send("Comando não autorizado. Apenas o líder pode desativar o T-800.")
+# ... (outras funções do bot) ...
 
-# Função para o servidor web. Apenas para manter o Render feliz.
+# Função para o servidor web.
 async def health_check(request):
     return web.Response(text="T-800 está online.")
 
@@ -58,13 +51,12 @@ async def start_webserver():
     runner = web.AppRunner(app)
     await runner.setup()
     
-    # Render usa a variável de ambiente 'PORT'. Se não existir, usamos 8080.
     port = int(os.getenv("PORT", 8080))
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
     print(f"Servidor web iniciado na porta {port}.")
 
 
-# Iniciando o Exterminador e o servidor web.
+# Iniciando o Exterminador.
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
