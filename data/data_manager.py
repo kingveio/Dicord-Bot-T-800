@@ -134,9 +134,15 @@ class DataManager:
         
         drive_folder_id = os.getenv('DRIVE_FOLDER_ID')
         shared_drive_id = os.getenv('SHARED_DRIVE_ID')
-        if not drive_folder_id or not shared_drive_id:
-            result["error"] = "Variáveis de ambiente DRIVE_FOLDER_ID ou SHARED_DRIVE_ID não estão definidas."
-            print("❌ Erro: Variáveis de ambiente faltando.")
+        
+        if not drive_folder_id:
+            result["error"] = "Variável de ambiente DRIVE_FOLDER_ID não está definida."
+            print("❌ Erro: DRIVE_FOLDER_ID faltando.")
+            return result
+        
+        if not shared_drive_id:
+            result["error"] = "Variável de ambiente SHARED_DRIVE_ID não está definida."
+            print("❌ Erro: SHARED_DRIVE_ID faltando.")
             return result
 
         try:
@@ -149,6 +155,9 @@ class DataManager:
 
             # 2. Upload para Shared Drive
             print("⬆️ Iniciando upload do backup para o Google Drive...")
+            print(f"   > Usando Folder ID: {drive_folder_id}")
+            print(f"   > Usando Shared Drive ID: {shared_drive_id}")
+            
             file_metadata = {
                 'name': f"backup_{datetime.now().strftime('%Y-%m-%d')}.json",
                 'parents': [drive_folder_id],
@@ -174,7 +183,13 @@ class DataManager:
             print(f"✅ Backup enviado com sucesso! ID do arquivo: {file.get('id')}")
             
         except HttpError as e:
-            error_msg = f"Erro HTTP {e.resp.status}: {json.loads(e.content.decode('utf-8'))['error']['message']}"
+            # Aprimoramento para capturar a mensagem de erro específica do Google.
+            try:
+                error_content = json.loads(e.content.decode('utf-8'))
+                error_msg = f"Erro HTTP {e.resp.status}: {error_content.get('error', {}).get('message', 'Mensagem de erro não disponível.')}"
+            except (json.JSONDecodeError, AttributeError):
+                error_msg = f"Erro HTTP {e.resp.status}: {e.reason}"
+
             result["error"] = error_msg
             print(f"❌ Erro HTTP ao fazer backup: {error_msg}")
         except Exception as e:
