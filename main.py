@@ -3,7 +3,7 @@ import discord
 from discord.ext import commands
 import os
 from config import DISCORD_TOKEN
-from aiohttp import web # Biblioteca para rodar o servidor web
+from aiohttp import web
 
 # Definindo as intenções do bot. O T-800 precisa de permissão para ver
 # os membros, presenças e o conteúdo das mensagens (para comandos de prefixo).
@@ -19,16 +19,20 @@ bot = commands.Bot(command_prefix="t-800 ", intents=intents)
 @bot.event
 async def on_ready():
     print(f'T-800 logado como {bot.user.name}. Alvo identificado.')
+    
+    # 1. Inicia o servidor web assim que o bot estiver pronto
+    bot.loop.create_task(start_webserver())
+    
+    # 2. Carrega os cogs
     for filename in os.listdir('./cogs'):
         if filename.endswith('.py'):
             try:
-                # O 'await' é essencial para carregar a extensão de forma assíncrona.
                 await bot.load_extension(f'cogs.{filename[:-3]}')
                 print(f'Módulo {filename} carregado. Armamento pronto.')
             except Exception as e:
                 print(f'Falha ao carregar módulo {filename}. Erro: {e}')
 
-    # Sincroniza os comandos de barra (slash commands) com o Discord.
+    # 3. Sincroniza os comandos de barra (slash commands) com o Discord.
     try:
         synced = await bot.tree.sync()
         print(f"Sincronizei {len(synced)} comando(s) de barra.")
@@ -63,6 +67,4 @@ async def start_webserver():
 
 # Iniciando o Exterminador e o servidor web.
 if __name__ == "__main__":
-    # Cria uma nova tarefa para rodar o servidor web
-    bot.loop.create_task(start_webserver())
     bot.run(DISCORD_TOKEN)
