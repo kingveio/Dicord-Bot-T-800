@@ -9,6 +9,7 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from googleapiclient.errors import HttpError
+from google_auth_oauthlib.flow import InstalledAppFlow
 
 class DataManager:
     def __init__(self, filepath: str = "data/streamers.json"):
@@ -20,23 +21,21 @@ class DataManager:
         self._setup_google_drive()
         self.data = self._load_or_initialize_data()
 
- from google_auth_oauthlib.flow import InstalledAppFlow
-
-def _setup_google_drive(self):
-    """Configura OAuth 2.0 para Google Drive"""
-    SCOPES = ['https://www.googleapis.com/auth/drive.file']
-    
-    try:
-        flow = InstalledAppFlow.from_client_secrets_file(
-            'credentials.json', SCOPES)
-        creds = flow.run_local_server(port=0)
-        
-        with open('token.json', 'w') as token:
-            token.write(creds.to_json())
-            
-    except Exception as e:
-        print(f"⚠️ Erro ao configurar OAuth: {e}")
-        return None
+    def _setup_google_drive(self):
+        """Configura as credenciais do Google Drive"""
+        try:
+            creds_base64 = os.getenv('GOOGLE_CREDENTIALS')
+            if creds_base64:
+                try:
+                    decoded = base64.b64decode(creds_base64)
+                    with open("credentials.json", "wb") as f:
+                        f.write(decoded)
+                except (binascii.Error, ValueError) as e:
+                    print(f"⚠️ Credenciais do Google Drive inválidas (erro Base64): {e}")
+                    return None
+        except Exception as e:
+            print(f"⚠️ Erro ao configurar Google Drive: {e}")
+            return None
 
     def _load_or_initialize_data(self) -> Dict:
         """Carrega ou cria o arquivo de dados com estrutura padrão"""
@@ -100,61 +99,78 @@ def _setup_google_drive(self):
             return ""
 
     def backup_to_drive(self) -> Dict:
-    """Realiza backup para Google Drive usando Shared Drive"""
-    result = {
-        "success": False,
-        "file_id": None,
-        "file_url": None,
-        "timestamp": datetime.now().isoformat(),
-        "error": None
-    }
+        """Realiza backup completo para o Google Drive com tratamento robusto de erros"""
+        result = {
+            "success": False,
+            "file_id": None,
+            "file_url": None,
+            "timestamp": datetime.now().isoformat(),
+            "error": None
+        }
 
-    # Verificações iniciais
-    if not os.getenv('DRIVE_FOLDER_ID'):
-        result["error"] = "ID da pasta não configurado"
-        return result
-
-    try:
-        # 1. Criar backup local
-        backup_path = self._create_backup("drive")
-        if not backup_path:
-            result["error"] = "Falha ao criar backup local"
+        # Verificação preliminar
+        if not self.data:
+            result["error"] = "Nenhum dado para backup"
             return result
 
-        # 2. Configurar serviço
-        creds = service_account.Credentials.from_service_account_file(
-            "credentials.json",
-            scopes=['https://www.googleapis.com/auth/drive']
-        )
+        required_envs = ['GOOGLE_CREDENTIALS', 'DRIVE_FOLDER_ID']
+        missing = [env for env in required_envs if not os.getenv(env)]
         
-        # 3. Upload para Shared Drive
-        with build('drive', 'v3', credentials=creds) as service:
-            file_metadata = {
-                'name': os.path.basename(backup_path),
-                'parents': [os.getenv('DRIVE_FOLDER_ID')]
-            }
+        if missing:
+            result["error"] = f"Variáveis de ambiente faltando: {', '.join(missing)}"
+            return result
+
+        try:
+            # 1. Criar backup local
+            backup_path = self._create_backup("drive")
+            if not backup_path or not os.path.exists(backup_path):
+                result["error"] = "Falha ao criar ou localizar backup local"
+                return result
+
+            # 2. Configurar serviço do Google Drive
+            creds = service_account.Credentials.from_service_account_file(
+                "credentials.json",
+                scopes=['https://www.googleapis.com/auth/drive.file']
+            )
             
-            media = MediaFileUpload(backup_path, mimetype='application/json')
-            
-            file = service.files().create(
-                body=file_metadata,
-                media_body=media,
-                supportsAllDrives=True,
-                fields='id,webViewLink'
-            ).execute()
+            # 3. Upload para o Google Drive
+            with build('drive', 'v3', credentials=creds) as service:
+                file_metadata = {
+                    'name': os.path.basename(backup_path),
+                    'parents': [os.getenv('DRIVE_FOLDER_ID')]
+                }
+                
+                media = MediaFileUpload(
+                    backup_path,
+                    mimetype='application/json',
+                    resumable=True
+                )
+                
+                file = service.files().create(
+                    body=file_metadata,
+                    media_body=media,
+                    fields='id,name,webViewLink',
+                    supportsAllDrives=True
+                ).execute()
 
-            result.update({
-                "success": True,
-                "file_id": file['id'],
-                "file_url": file.get('webViewLink')
-            })
+                # 4. Atualizar status
+                self.data["metadata"]["last_backup"] = result["timestamp"]
+                self._save_data()
 
-    except HttpError as e:
-        result["error"] = f"Erro HTTP {e.status_code}: {e.error_details}"
-    except Exception as e:
-        result["error"] = f"Erro inesperado: {str(e)}"
+                result.update({
+                    "success": True,
+                    "file_id": file['id'],
+                    "file_url": file.get('webViewLink'),
+                    "file_name": file['name']
+                })
 
-    return result
+        except HttpError as http_err:
+            err_details = http_err.error_details if hasattr(http_err, 'error_details') else str(http_err)
+            result["error"] = f"Erro HTTP {http_err.status_code}: {err_details}"
+        except Exception as e:
+            result["error"] = f"Erro inesperado: {type(e).__name__}: {str(e)}"
+
+        return result
 
     def get_guild_data(self, guild_id: int) -> Dict:
         guild_id_str = str(guild_id)
