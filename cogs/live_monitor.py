@@ -10,8 +10,6 @@ class LiveMonitor(commands.Cog):
         self.bot = bot
         self.last_check = {}
         self.check_interval = timedelta(minutes=5)
-        
-        # Inicia a tarefa somente após o bot estar pronto
         self.monitor.start()
 
     def cog_unload(self):
@@ -19,69 +17,89 @@ class LiveMonitor(commands.Cog):
 
     @tasks.loop(minutes=5.0)
     async def monitor(self):
+        """Tarefa periódica para verificar lives"""
         try:
             await self.bot.wait_until_ready()
             
             for guild in self.bot.guilds:
-                guild_data = await self.bot.data_manager.get_guild(guild.id)
-                if not guild_data.config.live_role_id:
+                # Obtém dados da guilda (sem await)
+                guild_data = self.bot.data_manager.get_guild(guild.id)
+                
+                # Verifica se há configuração de cargo de live
+                if not guild_data["config"]["live_role_id"]:
                     continue
                     
-                live_role = guild.get_role(guild_data.config.live_role_id)
+                live_role = guild.get_role(guild_data["config"]["live_role_id"])
                 if not live_role:
+                    logger.warning(f"Cargo de live não encontrado na guilda {guild.id}")
                     continue
 
-                for user_id, user_data in guild_data.users.items():
+                # Verifica cada usuário cadastrado
+                for user_id_str, user_data in guild_data["users"].items():
+                    user_id = int(user_id_str)
                     member = guild.get_member(user_id)
                     if not member:
                         continue
                     
-                    # Verificar Twitch
-                    twitch_status = None
-                    if user_data.twitch:
-                        twitch_status = await self._check_twitch(user_data.twitch.username, member, live_role)
+                    # Verificação Twitch
+                    if user_data.get("twitch"):
+                        await self._check_platform(
+                            member=member,
+                            role=live_role,
+                            platform_data=user_data["twitch"],
+                            platform_name="Twitch",
+                            check_func=self.bot.twitch_api.is_live
+                        )
                     
-                    # Verificar YouTube se não estiver live na Twitch
-                    if not twitch_status and user_data.youtube:
-                        await self._check_youtube(user_data.youtube.username, member, live_role)
+                    # Verificação YouTube
+                    if user_data.get("youtube"):
+                        await self._check_platform(
+                            member=member,
+                            role=live_role,
+                            platform_data=user_data["youtube"],
+                            platform_name="YouTube",
+                            check_func=self.bot.youtube_api.is_live
+                        )
+                        
         except Exception as e:
-            logger.error(f"Erro no monitoramento: {e}")
+            logger.error(f"Erro no monitoramento: {e}", exc_info=True)
 
-    async def _check_twitch(self, username: str, member: discord.Member, role: discord.Role) -> bool:
-        """Verifica status na Twitch e atualiza cargo"""
-        is_live, title = await self.bot.twitch_api.is_live(username)
-        
-        if is_live and role not in member.roles:
-            await member.add_roles(role)
-            if self.bot.discord_service.get_guild(member.guild.id).config.notify_channel_id:
-                await self.bot.discord_service.send_notification(
-                    member.guild.id,
-                    f"🎮 {member.mention} está ao vivo na Twitch!\n**{title}**"
-                )
-            return True
-        
-        elif not is_live and role in member.roles:
-            await member.remove_roles(role)
-        
-        return False
-
-    async def _check_youtube(self, username: str, member: discord.Member, role: discord.Role) -> bool:
-        """Verifica status no YouTube e atualiza cargo"""
-        is_live, title = await self.bot.youtube_api.is_live(username)
-        
-        if is_live and role not in member.roles:
-            await member.add_roles(role)
-            if self.bot.discord_service.get_guild(member.guild.id).config.notify_channel_id:
-                await self.bot.discord_service.send_notification(
-                    member.guild.id,
-                    f"🎥 {member.mention} está ao vivo no YouTube!\n**{title}**"
-                )
-            return True
-        
-        elif not is_live and role in member.roles:
-            await member.remove_roles(role)
-        
-        return False
+    async def _check_platform(
+        self,
+        member: discord.Member,
+        role: discord.Role,
+        platform_data: dict,
+        platform_name: str,
+        check_func
+    ):
+        """Método genérico para verificação de plataforma"""
+        try:
+            is_live, title = await check_func(platform_data["username"])
+            
+            if is_live:
+                platform_data["last_live"] = datetime.now().isoformat()
+                platform_data["is_live"] = True
+                
+                if role not in member.roles:
+                    await member.add_roles(role)
+                    logger.info(f"{member.display_name} entrou em live na {platform_name}")
+                    
+                    # Envia notificação se configurado
+                    guild_data = self.bot.data_manager.get_guild(member.guild.id)
+                    if guild_data["config"]["notify_channel_id"]:
+                        channel = member.guild.get_channel(guild_data["config"]["notify_channel_id"])
+                        if channel:
+                            await channel.send(
+                                f"🎮 {member.mention} está ao vivo na {platform_name}!\n"
+                                f"**{title}**"
+                            )
+            else:
+                platform_data["is_live"] = False
+                if role in member.roles:
+                    await member.remove_roles(role)
+                    
+        except Exception as e:
+            logger.error(f"Erro ao verificar {platform_name}: {e}")
 
 async def setup(bot):
     await bot.add_cog(LiveMonitor(bot))
