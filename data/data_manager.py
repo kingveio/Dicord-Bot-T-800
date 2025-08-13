@@ -108,20 +108,21 @@ class DataManager:
             )
             service = build('drive', 'v3', credentials=creds)
 
-            # 3. Upload do arquivo
-             file_metadata = { 
+            # 3. Upload do arquivo (CORREÇÃO DA INDENTAÇÃO AQUI)
+            file_metadata = {
                 'name': os.path.basename(backup_path),
                 'parents': [os.getenv('DRIVE_FOLDER_ID')],
-                'supportsAllDrives': True  # Isso é essencial!
+                'supportsAllDrives': True,
+                'driveId': os.getenv('SHARED_DRIVE_ID')
             }
-            file_metadata['driveId'] = os.getenv('SHARED_DRIVE_ID')
             
             media = MediaFileUpload(backup_path, mimetype='application/json')
             
             file = service.files().create(
                 body=file_metadata,
                 media_body=media,
-                fields='id,name,webViewLink'
+                fields='id,name,webViewLink',
+                supportsAllDrives=True  # Adicionado para Drives Compartilhados
             ).execute()
 
             # 4. Atualizar status
@@ -131,7 +132,7 @@ class DataManager:
             result.update({
                 "success": True,
                 "file_id": file['id'],
-                "file_url": file.get('webViewLink'),
+                "file_url': file.get('webViewLink'),
                 "file_name": file['name']
             })
 
