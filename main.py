@@ -1,195 +1,166 @@
-import discord
-from discord.ext import commands, tasks
-from discord import app_commands
-from data.data_manager import DataManager
-from flask import Flask
-from threading import Thread
+# main.py
+# T-800: Bot Discord para monitoramento de streamers.
+# Interage com a classe DataManager para persistência de dados.
+
 import os
-from datetime import datetime, timedelta
+import discord
 import asyncio
-import base64
+import logging
+from data_manager import DataManager # Importa a classe do nosso Canvas
+from discord import app_commands
 
-# Configuração inicial
-intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="t-800 ", intents=intents)
-data_manager = DataManager()
+# Configuração do logger
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[
+        logging.FileHandler("bot.log"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
-# Servidor web para keep-alive
-flask_app = Flask(__name__)
+# Configurações do Discord
+DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
+if not DISCORD_TOKEN:
+    logger.error("❌ Variável de ambiente 'DISCORD_TOKEN' não definida. O bot não pode ser iniciado.")
+    exit()
 
-@flask_app.route('/')
-def home():
-    last_backup = data_manager.data["metadata"].get("last_backup", "Nunca")
-    return f"""
-    <h1>T-800 Status</h1>
-    <p><strong>Online desde:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-    <p><strong>Último backup:</strong> {last_backup}</p>
-    <p><strong>Servidores:</strong> {len(bot.guilds)}</p>
+# Definir intents (intenções) para o bot
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True
+intents.presences = True
+
+class BotClient(discord.Client):
     """
-def run_flask():
-    port = int(os.environ.get('PORT', 8080))  # Usa a porta do Render ou 8080 como fallback
-    flask_app.run(host='0.0.0.0', port=port)
+    Cliente principal do bot.
+    """
+    def __init__(self, *, intents: discord.Intents):
+        super().__init__(intents=intents)
+        self.tree = app_commands.CommandTree(self)
+        self.data_manager: DataManager = None
 
-# COMANDOS DE CONFIGURAÇÃO
-@bot.tree.command(name="configurar_backup", description="[ADMIN] Ativa/desativa backups automáticos")
-@app_commands.default_permissions(administrator=True)
-async def config_backup(interaction: discord.Interaction, ativar: bool):
-    guild_data = data_manager.get_guild_data(interaction.guild.id)
-    guild_data["config"]["backup_enabled"] = ativar
-    data_manager._save_data()
-    
-    await interaction.response.send_message(
-        f"✅ Backups automáticos {'ativados' if ativar else 'desativados'}!",
-        ephemeral=True
-    )
+    async def on_ready(self):
+        """
+        Evento disparado quando o bot está pronto e conectado ao Discord.
+        """
+        logger.info(f'✅ Bot conectado como {self.user} (ID: {self.user.id})')
+        
+        # Sincronizar comandos da árvore de comandos
+        synced = await self.tree.sync()
+        logger.info(f'🔁 {len(synced)} comandos sincronizados')
 
-# COMANDOS DE USUÁRIO
-@bot.tree.command(name="vincular_twitch", description="Vincula sua conta da Twitch")
-@app_commands.describe(username="Seu nome de usuário na Twitch (sem URL)")
-async def vincular_twitch(interaction: discord.Interaction, username: str):
-    try:
-        success = data_manager.link_user_channel(
-            guild=interaction.guild,
-            user=interaction.user,
-            platform="twitch",
-            channel_id=username
-        )
+        # Inicializar a classe DataManager de forma assíncrona
+        self.data_manager = await DataManager.create()
         
-        if success:
-            await interaction.response.send_message(
-                f"✅ Twitch **{username}** vinculada com sucesso!",
-                ephemeral=True
-            )
-        else:
-            await interaction.response.send_message(
-                "❌ Falha ao vincular conta Twitch",
-                ephemeral=True
-            )
-    except Exception as e:
-        await interaction.response.send_message(
-            f"⚠️ Erro: {str(e)}",
-            ephemeral=True
-        )
+        # Iniciar a tarefa de verificação de streams em segundo plano
+        self.loop.create_task(self.check_streams_background_task())
 
-@bot.tree.command(name="minhas_vinculacoes", description="Mostra seus canais vinculados")
-async def minhas_vinculacoes(interaction: discord.Interaction):
-    try:
-        platforms = data_manager.get_user_platforms(
-            guild_id=interaction.guild.id,
-            user_id=interaction.user.id
-        )
-        
-        embed = discord.Embed(
-            title="Seus Canais Vinculados",
-            color=discord.Color.blue()
-        )
-        
-        if platforms.get("twitch"):
-            embed.add_field(
-                name="🔴 Twitch",
-                value=f"[{platforms['twitch']}](https://twitch.tv/{platforms['twitch']})",
-                inline=False
-            )
-        
-        if platforms.get("youtube"):
-            embed.add_field(
-                name="▶️ YouTube",
-                value=f"[Canal](https://youtube.com/channel/{platforms['youtube']})",
-                inline=False
-            )
-        
-        if not platforms.get("twitch") and not platforms.get("youtube"):
-            embed.description = "Você não tem nenhum canal vinculado!"
-        
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        
-    except Exception as e:
-        await interaction.response.send_message(
-            f"⚠️ Erro: {str(e)}",
-            ephemeral=True
-        )
-
-# COMANDOS DE ADMIN
-@bot.tree.command(name="forcar_backup", description="[ADMIN] Executa um backup manual")
-@app_commands.default_permissions(administrator=True)
-async def forcar_backup(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
-    
-    try:
-        result = data_manager.backup_to_drive()
-        
-        embed = discord.Embed(
-            title="📂 Resultado do Backup",
-            color=discord.Color.green() if result["success"] else discord.Color.red()
-        )
-        
-        if result["success"]:
-            embed.description = f"Backup realizado com sucesso!\n**Arquivo:** {result['file_name']}"
-            embed.add_field(
-                name="🔗 Link",
-                value=f"[Abrir no Drive]({result['file_url']})",
-                inline=False
-            )
-        else:
-            embed.description = "❌ Falha no backup"
-            embed.add_field(
-                name="Erro",
-                value=result.get("error", "Desconhecido"),
-                inline=False
-            )
-        
-        await interaction.followup.send(embed=embed, ephemeral=True)
-        
-    except Exception as e:
-        await interaction.followup.send(
-            f"⚠️ Erro crítico: {str(e)}",
-            ephemeral=True
-        )
-
-# TAREFAS AUTOMÁTICAS
-@tasks.loop(hours=24)
-async def daily_backup():
-    try:
-        print("⏳ Executando backup diário...")
-        result = data_manager.backup_to_drive()
-        
-        if result["success"]:
-            print(f"✅ Backup realizado: {result['file_name']}")
-        else:
-            print(f"❌ Falha no backup: {result.get('error', 'Desconhecido')}")
+    async def check_streams_background_task(self):
+        """
+        Tarefa em segundo plano para verificar streams ao vivo.
+        É um exemplo simplificado e precisa ser implementado.
+        """
+        await self.wait_until_ready()
+        while not self.is_closed():
+            logger.info("🔄 Verificando streams...")
             
-    except Exception as e:
-        print(f"⚠️ Erro na tarefa de backup: {str(e)}")
+            # TODO: Implementar a lógica real de verificação de streams aqui.
+            # Exemplo: chamar a API da Twitch ou YouTube
+            
+            # Acessar os dados da guilda
+            for guild_id_str, guild_data in self.data_manager.data.get("guilds", {}).items():
+                guild = self.get_guild(int(guild_id_str))
+                if guild:
+                    # Enviar uma mensagem de teste para o canal de notificação
+                    notify_channel_id = guild_data['config']['notify_channel']
+                    if notify_channel_id:
+                        channel = guild.get_channel(int(notify_channel_id))
+                        if channel:
+                            logger.debug(f"ℹ️ Verificando guilda {guild.name}")
+                            # await channel.send("Teste: Verificação de stream concluída.")
 
-@bot.event
-async def on_ready():
-    print(f'✅ Bot conectado como {bot.user} (ID: {bot.user.id})')
-    print('------')
-    
-    # Inicia servidor web
-    Thread(target=run_flask).start()
-    
-    # Sincroniza comandos
-    try:
-        synced = await bot.tree.sync()
-        print(f'🔁 {len(synced)} comandos sincronizados')
-    except Exception as e:
-        print(f'❌ Erro ao sincronizar comandos: {e}')
-    
-    # Inicia tarefas automáticas
-    daily_backup.start()
-    print("🔄 Tarefas automáticas iniciadas")
+            await asyncio.sleep(300)  # Espera 5 minutos
 
-# INICIALIZAÇÃO
-if __name__ == "__main__":
-    # Configura credenciais do Google Drive se existirem
-    if os.getenv('GOOGLE_CREDENTIALS'):
-        with open("credentials.json", "wb") as f:
-            f.write(base64.b64decode(os.getenv('GOOGLE_CREDENTIALS')))
+# Cria uma instância do bot
+client = BotClient(intents=intents)
+
+@client.tree.command(name="link", description="Vincula seu canal de streamer com o bot.")
+@app_commands.describe(plataforma="A plataforma do seu canal (twitch, youtube).", canal="O nome do seu canal.")
+async def link_channel_command(interaction: discord.Interaction, plataforma: str, canal: str):
+    """
+    Comando para vincular o canal de um usuário.
+    """
+    user_id = interaction.user.id
+    guild_id = interaction.guild_id
     
-    # Verifica token
-    if not os.getenv('DISCORD_TOKEN'):
-        raise ValueError("❌ Token do Discord não configurado!")
+    if plataforma.lower() not in ["twitch", "youtube"]:
+        await interaction.response.send_message("❌ Plataforma inválida. Use 'twitch' ou 'youtube'.", ephemeral=True)
+        return
+        
+    success = await client.data_manager.link_user_channel(guild_id, user_id, plataforma, canal)
     
-    print("🚀 Iniciando T-800...")
-    bot.run(os.getenv('DISCORD_TOKEN'))
+    if success:
+        await interaction.response.send_message(
+            f"✅ Seu canal do {plataforma} ({canal}) foi vinculado com sucesso! Agora você receberá notificações.",
+            ephemeral=True
+        )
+    else:
+        await interaction.response.send_message(
+            "❌ Ocorreu um erro ao vincular seu canal. Tente novamente mais tarde.",
+            ephemeral=True
+        )
+
+@client.tree.command(name="unlink", description="Desvincula seu canal de uma plataforma.")
+@app_commands.describe(plataforma="A plataforma que você deseja desvincular (twitch, youtube).")
+async def unlink_channel_command(interaction: discord.Interaction, plataforma: str):
+    """
+    Comando para desvincular o canal de um usuário.
+    """
+    user_id = interaction.user.id
+    guild_id = interaction.guild_id
+    
+    if plataforma.lower() not in ["twitch", "youtube"]:
+        await interaction.response.send_message("❌ Plataforma inválida. Use 'twitch' ou 'youtube'.", ephemeral=True)
+        return
+
+    success = await client.data_manager.remove_user_platform(guild_id, user_id, plataforma)
+    
+    if success:
+        await interaction.response.send_message(
+            f"✅ Seu canal do {plataforma} foi desvinculado com sucesso.",
+            ephemeral=True
+        )
+    else:
+        await interaction.response.send_message(
+            f"❌ Você não tem um canal do {plataforma} vinculado.",
+            ephemeral=True
+        )
+
+@client.tree.command(name="status", description="Exibe os canais que você vinculou.")
+async def status_command(interaction: discord.Interaction):
+    """
+    Comando para exibir os canais vinculados pelo usuário.
+    """
+    user_id = interaction.user.id
+    guild_id = interaction.guild_id
+    
+    user_platforms = client.data_manager.get_user_platforms(guild_id, user_id)
+    
+    twitch_channel = user_platforms.get("twitch")
+    youtube_channel = user_platforms.get("youtube")
+    
+    response = "ℹ️ **Seus canais vinculados:**\n"
+    if twitch_channel:
+        response += f"Twitch: `{twitch_channel}`\n"
+    if youtube_channel:
+        response += f"YouTube: `{youtube_channel}`\n"
+    
+    if not twitch_channel and not youtube_channel:
+        response = "❌ Você não tem nenhum canal vinculado. Use `/link` para começar."
+        
+    await interaction.response.send_message(response, ephemeral=True)
+
+# Executar o bot
+client.run(DISCORD_TOKEN, log_handler=None)
