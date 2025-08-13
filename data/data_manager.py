@@ -158,7 +158,6 @@ class DataManager:
         result["error"] = f"Erro inesperado: {type(e).__name__}: {str(e)}"
 
     return result
-
     def get_guild_data(self, guild_id: int) -> Dict:
         guild_id_str = str(guild_id)
         if guild_id_str not in self.data["guilds"]:
