@@ -8,7 +8,6 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from googleapiclient.errors import HttpError
-from data.data_manager import DataManager
 
 class DataManager:
     def __init__(self, filepath: str = "data/streamers.json"):
@@ -140,7 +139,6 @@ class DataManager:
 
         return result
 
-    # Métodos principais de gerenciamento de dados
     def get_guild_data(self, guild_id: int) -> Dict:
         guild_id_str = str(guild_id)
         if guild_id_str not in self.data["guilds"]:
@@ -177,7 +175,6 @@ class DataManager:
         guild_data["users"][user_id_str][platform] = channel_id.lower().strip()
         self._save_data()
         
-        # Backup automático após modificação importante
         if guild_data["config"]["backup_enabled"]:
             self.backup_to_drive()
             
@@ -195,7 +192,6 @@ class DataManager:
         if user_id_str in guild_data["users"] and platform in guild_data["users"][user_id_str]:
             del guild_data["users"][user_id_str][platform]
             
-            # Remove user data if no platforms left
             if not guild_data["users"][user_id_str].get("twitch") and not guild_data["users"][user_id_str].get("youtube"):
                 del guild_data["users"][user_id_str]
             
