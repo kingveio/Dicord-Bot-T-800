@@ -1,6 +1,6 @@
 import aiohttp
 import logging
-from typing import Optional, Tuple
+from typing import Optional, Tuple  # Adicionando import
 from config import Config
 
 logger = logging.getLogger(__name__)
