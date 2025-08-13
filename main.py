@@ -109,14 +109,19 @@ class T800Bot(commands.Bot):
 
 async def main():
     try:
-        # Configuração inicial
+        # Valida as configurações primeiro
         Config.validate()
         setup_logging(Config.LOG_LEVEL)
+        
+        logger.info("✅ Todas as configurações validadas com sucesso")
         
         # Inicializa e inicia o bot
         bot = T800Bot()
         await bot.start(Config.DISCORD_TOKEN)
         
+    except ValueError as e:
+        logger.critical(f"❌ Erro de configuração: {e}")
+        raise
     except Exception as e:
         logger.critical(f"💥 ERRO FATAL: {e}", exc_info=True)
         raise
