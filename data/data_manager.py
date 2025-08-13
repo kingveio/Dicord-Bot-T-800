@@ -99,78 +99,45 @@ class DataManager:
             return ""
 
     def backup_to_drive(self) -> Dict:
-        """Realiza backup completo para o Google Drive com tratamento robusto de erros"""
-        result = {
-            "success": False,
-            "file_id": None,
-            "file_url": None,
-            "timestamp": datetime.now().isoformat(),
-            "error": None
-        }
-
-        # Verificação preliminar
-        if not self.data:
-            result["error"] = "Nenhum dado para backup"
-            return result
-
-        required_envs = ['GOOGLE_CREDENTIALS', 'DRIVE_FOLDER_ID']
-        missing = [env for env in required_envs if not os.getenv(env)]
+    """Versão corrigida para Shared Drives"""
+    result = {"success": False, "error": None}
+    
+    try:
+        # 1. Configuração do serviço
+        creds = service_account.Credentials.from_service_account_file(
+            "credentials.json",
+            scopes=['https://www.googleapis.com/auth/drive']
+        )
         
-        if missing:
-            result["error"] = f"Variáveis de ambiente faltando: {', '.join(missing)}"
-            return result
-
-        try:
-            # 1. Criar backup local
-            backup_path = self._create_backup("drive")
-            if not backup_path or not os.path.exists(backup_path):
-                result["error"] = "Falha ao criar ou localizar backup local"
-                return result
-
-            # 2. Configurar serviço do Google Drive
-            creds = service_account.Credentials.from_service_account_file(
-                "credentials.json",
-                scopes=['https://www.googleapis.com/auth/drive.file']
+        # 2. Upload para Shared Drive
+        with build('drive', 'v3', credentials=creds) as service:
+            file_metadata = {
+                'name': f"backup_{datetime.now().strftime('%Y%m%d')}.json",
+                'parents': [os.getenv('DRIVE_FOLDER_ID')],
+                'driveId': os.getenv('SHARED_DRIVE_ID')
+            }
+            
+            media = MediaFileUpload(
+                self.filepath,
+                mimetype='application/json'
             )
             
-            # 3. Upload para o Google Drive
-            with build('drive', 'v3', credentials=creds) as service:
-                file_metadata = {
-                    'name': os.path.basename(backup_path),
-                    'parents': [os.getenv('DRIVE_FOLDER_ID')]
-                }
-                
-                media = MediaFileUpload(
-                    backup_path,
-                    mimetype='application/json',
-                    resumable=True
-                )
-                
-                file = service.files().create(
-                    body=file_metadata,
-                    media_body=media,
-                    fields='id,name,webViewLink',
-                    supportsAllDrives=True
-                ).execute()
-
-                # 4. Atualizar status
-                self.data["metadata"]["last_backup"] = result["timestamp"]
-                self._save_data()
-
-                result.update({
-                    "success": True,
-                    "file_id": file['id'],
-                    "file_url": file.get('webViewLink'),
-                    "file_name": file['name']
-                })
-
-        except HttpError as http_err:
-            err_details = http_err.error_details if hasattr(http_err, 'error_details') else str(http_err)
-            result["error"] = f"Erro HTTP {http_err.status_code}: {err_details}"
-        except Exception as e:
-            result["error"] = f"Erro inesperado: {type(e).__name__}: {str(e)}"
-
-        return result
+            file = service.files().create(
+                body=file_metadata,
+                media_body=media,
+                supportsAllDrives=True,
+                fields='id'
+            ).execute()
+            
+            result["success"] = True
+            result["file_id"] = file.get('id')
+            
+    except HttpError as e:
+        result["error"] = f"Erro HTTP {e.status_code}: {e.reason}"
+    except Exception as e:
+        result["error"] = str(e)
+    
+    return result
 
     def get_guild_data(self, guild_id: int) -> Dict:
         guild_id_str = str(guild_id)
