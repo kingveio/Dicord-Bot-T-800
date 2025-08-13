@@ -1,200 +1,163 @@
+import discord
 import json
 import os
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
 from datetime import datetime
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
 
 class DataManager:
     def __init__(self, filepath: str = "data/streamers.json"):
-        """Inicializa o gerenciador de dados com tratamento robusto"""
         self.filepath = filepath
-        self.backup_dir = "data/backups"
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        os.makedirs(self.backup_dir, exist_ok=True)
-        self.data = self._initialize_data()
+        self.data = self._load_or_initialize_data()
 
-    def _initialize_data(self) -> Dict:
-        """Carrega ou cria o arquivo de dados com estrutura padrão"""
-        default_structure = {
+    def _load_or_initialize_data(self) -> Dict:
+        default_data = {
             "guilds": {},
             "metadata": {
-                "last_updated": datetime.now().isoformat(),
-                "version": "2.0"
+                "version": "2.1",
+                "created_at": datetime.now().isoformat()
             }
         }
-
-        if not os.path.exists(self.filepath):
-            self._save_data(default_structure)
-            return default_structure
-
-        try:
-            with open(self.filepath, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                
-                # Migração para estrutura v2.0 se necessário
-                if "metadata" not in data:
-                    data["metadata"] = default_structure["metadata"]
-                    self._save_data(data)
-                
-                return data
-        except (json.JSONDecodeError, IOError) as e:
-            print(f"⚠️ Erro ao carregar dados, criando novo: {e}")
-            self._create_backup("corrupted")
-            self._save_data(default_structure)
-            return default_structure
-
-    def _save_data(self, data: Optional[Dict] = None) -> None:
-        """Salva os dados com tratamento de erros e backup automático"""
-        data_to_save = data or self.data
-        data_to_save["metadata"]["last_updated"] = datetime.now().isoformat()
-
-        try:
-            # Cria backup antes de salvar
-            self._create_backup("pre_save")
-            
-            with open(self.filepath, 'w', encoding='utf-8') as f:
-                json.dump(data_to_save, f, indent=4, ensure_ascii=False)
-        except IOError as e:
-            print(f"❌ Falha crítica ao salvar dados: {e}")
-            raise
-
-    def _create_backup(self, reason: str = "manual") -> str:
-        """Cria um backup local com timestamp"""
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_path = f"{self.backup_dir}/streamers_{timestamp}_{reason}.json"
         
         try:
-            with open(self.filepath, 'r', encoding='utf-8') as source:
-                with open(backup_path, 'w', encoding='utf-8') as target:
-                    json.dump(json.load(source), target, indent=4)
-            return backup_path
+            if os.path.exists(self.filepath):
+                with open(self.filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    # Migração para nova estrutura se necessário
+                    if "metadata" not in data:
+                        data["metadata"] = default_data["metadata"]
+                    return data
+            return default_data
         except Exception as e:
-            print(f"⚠️ Falha ao criar backup: {e}")
-            return ""
+            print(f"⚠️ Erro ao carregar dados: {e}")
+            return default_data
 
-    # --- Métodos Principais ---
-    def get_guild_data(self, guild_id: int) -> Dict:
-        """Obtém ou cria dados de um servidor"""
-        guild_id_str = str(guild_id)
-        
-        if guild_id_str not in self.data["guilds"]:
-            self.data["guilds"][guild_id_str] = {
-                "live_role_id": None,
-                "users": {},
-                "config": {
-                    "notify_channel": None,
-                    "cooldown_minutes": 5
-                }
-            }
-            self._save_data()
-        
-        return self.data["guilds"][guild_id_str]
+    def _save_data(self):
+        self.data["metadata"]["last_updated"] = datetime.now().isoformat()
+        with open(self.filepath, 'w', encoding='utf-8') as f:
+            json.dump(self.data, f, indent=4, ensure_ascii=False)
 
-    def set_live_role_id(self, guild_id: int, role_id: int) -> None:
-        """Define o cargo de live para um servidor"""
-        guild_data = self.get_guild_data(guild_id)
-        guild_data["live_role_id"] = str(role_id)
-        self._save_data()
-
-    def add_user(
+    # --- Vinculação Completa ---
+    def link_user_channel(
         self,
-        guild_id: int,
-        user_id: int,
-        twitch_name: Optional[str] = None,
-        youtube_name: Optional[str] = None
+        guild: discord.Guild,
+        user: Union[discord.Member, discord.User],
+        platform: str,
+        channel_id: str
     ) -> bool:
-        """Adiciona/atualiza um streamer"""
-        guild_data = self.get_guild_data(guild_id)
-        user_id_str = str(user_id)
+        """Vincula um canal a um usuário com validação"""
+        guild_data = self.get_guild_data(guild.id)
+        user_id_str = str(user.id)
         
         if user_id_str not in guild_data["users"]:
-            guild_data["users"][user_id_str] = {}
+            guild_data["users"][user_id_str] = {
+                "discord_info": {
+                    "name": user.name,
+                    "display_name": user.display_name,
+                    "avatar": str(user.avatar.url) if user.avatar else None
+                }
+            }
+        
+        guild_data["users"][user_id_str][platform] = channel_id
+        self._save_data()
+        return True
 
-        updated = False
-        if twitch_name:
-            guild_data["users"][user_id_str]["twitch"] = twitch_name.lower().strip()
-            updated = True
-        if youtube_name:
-            guild_data["users"][user_id_str]["youtube"] = youtube_name.lower().strip()
-            updated = True
-
-        if updated:
-            self._save_data()
-        return updated
-
-    def remove_user_platform(
+    def get_linked_user(
         self,
         guild_id: int,
-        user_id: int,
-        platform: str
-    ) -> bool:
-        """Remove uma plataforma de um usuário"""
+        platform: str,
+        channel_id: str
+    ) -> Optional[discord.User]:
+        """Retorna o usuário do Discord vinculado a um canal"""
         guild_data = self.get_guild_data(guild_id)
-        user_id_str = str(user_id)
         
-        if (user_id_str in guild_data["users"] and 
-            platform in guild_data["users"][user_id_str]):
-            del guild_data["users"][user_id_str][platform]
-            
-            # Remove usuário se não tiver mais plataformas
-            if not guild_data["users"][user_id_str]:
-                del guild_data["users"][user_id_str]
-            
-            self._save_data()
-            return True
-        
-        return False
+        for user_id, data in guild_data["users"].items():
+            if data.get(platform) == channel_id:
+                return self.bot.get_user(int(user_id))
+        return None
 
-    # --- Backup no Google Drive ---
-    def backup_to_drive(self, credentials_path: str = "credentials.json") -> bool:
-        """Envia backup para o Google Drive"""
-        try:
-            creds = service_account.Credentials.from_service_account_file(
-                credentials_path,
-                scopes=['https://www.googleapis.com/auth/drive.file']
-            )
-            service = build('drive', 'v3', credentials=creds)
-            
-            backup_path = self._create_backup("drive_upload")
-            if not backup_path:
-                return False
-
-            file_metadata = {
-                'name': f"streamers_backup_{datetime.now().strftime('%Y%m%d')}.json",
-                'parents': ['1XyZ...']  # ID da pasta no Drive
-            }
-            
-            media = MediaFileUpload(
-                backup_path,
-                mimetype='application/json'
-            )
-            
-            file = service.files().create(
-                body=file_metadata,
-                media_body=media,
-                fields='id'
-            ).execute()
-            
-            print(f"✅ Backup enviado para o Drive (ID: {file.get('id')})")
-            return True
-            
-        except Exception as e:
-            print(f"❌ Falha no backup no Drive: {e}")
-            return False
-
-    # --- Métodos de Consulta ---
+    # --- Métodos Aprimorados ---
     def get_user_platforms(
         self,
         guild_id: int,
-        user_id: int
-    ) -> Dict[str, str]:
-        """Retorna todas as plataformas de um usuário"""
+        user: Union[discord.Member, discord.User]
+    ) -> Dict:
+        """Retorna todas as plataformas vinculadas com metadados"""
         guild_data = self.get_guild_data(guild_id)
-        user_id_str = str(user_id)
-        return guild_data["users"].get(user_id_str, {}).copy()
+        user_data = guild_data["users"].get(str(user.id), {})
+        
+        return {
+            "twitch": user_data.get("twitch"),
+            "youtube": user_data.get("youtube"),
+            "discord": {
+                "id": user.id,
+                "name": user.name,
+                "avatar": user.avatar.url if user.avatar else None
+            }
+        }
 
-    def get_all_streamers(self, guild_id: int) -> Dict:
-        """Retorna todos os streamers de um servidor"""
-        return self.get_guild_data(guild_id)["users"].copy()
+    def get_all_linked_users(
+        self,
+        guild: discord.Guild,
+        platform: Optional[str] = None
+    ) -> Dict:
+        """Retorna todos os usuários vinculados com filtro por plataforma"""
+        guild_data = self.get_guild_data(guild.id)
+        result = {}
+        
+        for user_id, data in guild_data["users"].items():
+            if not platform or platform in data:
+                member = guild.get_member(int(user_id))
+                if member:
+                    result[user_id] = {
+                        "user": member,
+                        "platforms": {
+                            "twitch": data.get("twitch"),
+                            "youtube": data.get("youtube")
+                        }
+                    }
+        return result
+
+    # --- Gerenciamento de Cargos ---
+    def update_live_role(
+        self,
+        guild: discord.Guild,
+        role: discord.Role
+    ) -> None:
+        """Atualiza o cargo de live com metadados"""
+        guild_data = self.get_guild_data(guild.id)
+        guild_data["live_role_id"] = str(role.id)
+        guild_data["live_role_info"] = {
+            "name": role.name,
+            "color": str(role.color),
+            "created_at": role.created_at.isoformat()
+        }
+        self._save_data()
+
+    # --- Backup Automático ---
+    def create_backup(self) -> str:
+        """Cria um backup com timestamp"""
+        backup_dir = "data/backups"
+        os.makedirs(backup_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = f"{backup_dir}/backup_{timestamp}.json"
+        
+        with open(backup_path, 'w', encoding='utf-8') as f:
+            json.dump(self.data, f, indent=4)
+            
+        return backup_path
+
+    def get_guild_data(self, guild_id: int) -> Dict:
+        guild_id_str = str(guild_id)
+        if guild_id_str not in self.data["guilds"]:
+            self.data["guilds"][guild_id_str] = {
+                "live_role_id": None,
+                "live_role_info": None,
+                "users": {},
+                "config": {
+                    "notification_channel": None,
+                    "cooldown": 5
+                }
+            }
+            self._save_data()
+        return self.data["guilds"][guild_id_str]
