@@ -17,7 +17,7 @@ class TwitchCommands(commands.Cog):
     async def vincular_twitch(self, interaction: discord.Interaction, usuario: discord.Member, nome_twitch: str):
         """Implementação do comando de vincular Twitch"""
         try:
-            success = await self.bot.data_manager.link_account(
+            success = await self.bot.data_manager.link_user_platform(
                 interaction.guild.id,
                 usuario.id,
                 "twitch",
