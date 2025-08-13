@@ -9,7 +9,7 @@ from typing import Dict, Optional, Union
 import discord
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
+from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload
 from googleapiclient.errors import HttpError
 from io import BytesIO
 
@@ -49,6 +49,7 @@ class DataManager:
             return
 
         try:
+            # Decodifica e carrega as credenciais diretamente da string Base64
             decoded = base64.b64decode(creds_base64)
             creds_info = json.loads(decoded.decode('utf-8'))
             creds = service_account.Credentials.from_service_account_info(
@@ -72,10 +73,12 @@ class DataManager:
 
         try:
             # Busca pelo arquivo 'streamers.json' dentro da pasta especificada
+            # O parâmetro corpora='drive' é crucial para buscar em shared drives
             query = f"name='streamers.json' and mimeType='application/json' and '{drive_folder_id}' in parents and trashed=false"
             response = self.drive_service.files().list(
                 q=query,
                 spaces='drive',
+                corpora='drive',
                 fields='files(id)',
                 supportsAllDrives=True,
                 includeItemsFromAllDrives=True
@@ -112,7 +115,7 @@ class DataManager:
                 'mimeType': 'application/json'
             }
             
-            media = MediaFileUpload(
+            media = MediaIoBaseUpload(
                 BytesIO(json.dumps(default_data, indent=4).encode('utf-8')),
                 mimetype='application/json',
                 resumable=True
@@ -207,7 +210,7 @@ class DataManager:
 
         try:
             print("⬆️ Sincronizando dados com o Google Drive...")
-            media = MediaFileUpload(
+            media = MediaIoBaseUpload(
                 BytesIO(json.dumps(data, indent=4).encode('utf-8')),
                 mimetype='application/json',
                 resumable=True
@@ -288,7 +291,7 @@ class DataManager:
         """
         try:
             guild_data = self.get_guild_data(guild_id)
-            user_id_str = str(user_id)
+            user_id_str = str(user.id)
             
             if user_id_str in guild_data["users"] and platform in guild_data["users"][user_id_str]:
                 del guild_data["users"][user_id_str][platform]
