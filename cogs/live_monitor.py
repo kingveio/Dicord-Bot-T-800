@@ -67,4 +67,4 @@ class LiveMonitor(commands.Cog):
                         print(f"T-800: Cargo {live_role.name} removido de {member.name}.")
 
 def setup(bot):
-    bot.add_cog(LiveMonitor(bot))
+    await bot.add_cog(LiveMonitor(bot))
