@@ -36,17 +36,7 @@ class HealthServer:
         if self.site:
             await self.site.stop()
         await self.runner.cleanup()
-        @bot.command()
-        @commands.is_owner()
-    async def sync(ctx):
-    """Sincroniza os comandos slash com o Discord"""
-    try:
-        synced = await bot.tree.sync()
-        await ctx.send(f"✅ {len(synced)} comandos sincronizados!")
-    except Exception as e:
-        await ctx.send(f"❌ Erro ao sincronizar: {e}")
-        logger.error(f"Erro na sincronização: {e}", exc_info=True)
-        
+
 class T800Bot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
@@ -63,7 +53,7 @@ class T800Bot(commands.Bot):
         self.data_manager.bot = self
         self.twitch_api = TwitchAPI()
         self.youtube_api = YouTubeAPI()
-        self.health_server = HealthServer()  # Servidor na porta 8080
+        self.health_server = HealthServer()
         self.session = None
         self.keep_alive_task = None
 
@@ -88,7 +78,11 @@ class T800Bot(commands.Bot):
                 except Exception as e:
                     logger.error(f"❌ Falha ao carregar {cog}: {e}")
             
-            # 4. Keep-alive para Render
+            # 4. Sincroniza comandos slash
+            await self.tree.sync()
+            logger.info("✅ Comandos slash sincronizados")
+            
+            # 5. Keep-alive para Render
             if Config.is_render():
                 self.keep_alive_task = asyncio.create_task(self.keep_alive())
                 
@@ -106,7 +100,7 @@ class T800Bot(commands.Bot):
                         logger.warning(f"⚠️ Health check falhou: {resp.status}")
             except Exception as e:
                 logger.warning(f"⚠️ Keep-alive error: {e}")
-            await asyncio.sleep(60)  # Verifica a cada 1 minuto
+            await asyncio.sleep(60)
 
     async def close(self):
         logger.info("🛑 Desligando bot...")
