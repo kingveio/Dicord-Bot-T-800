@@ -11,7 +11,7 @@ from googleapiclient.http import MediaFileUpload
 from googleapiclient.errors import HttpError
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-# A classe DataManager foi ajustada para ter uma função de backup funcional para o Google Shared Drive.
+# A classe DataManager foi ajustada para ter uma função de backup funcional para o Google Drive pessoal.
 class DataManager:
     """
     Gerencia os dados de streamers e configurações de guildas para um bot do Discord,
@@ -121,8 +121,8 @@ class DataManager:
 
     def backup_to_drive(self) -> Dict:
         """
-        Faz upload do arquivo de dados para um Google Shared Drive usando
-        credenciais de conta de serviço.
+        Faz upload do arquivo de dados para um Google Drive pessoal usando
+        uma conta de serviço com acesso a uma pasta compartilhada.
         """
         result = {"success": False, "error": None}
 
@@ -133,35 +133,30 @@ class DataManager:
             return result
         
         drive_folder_id = os.getenv('DRIVE_FOLDER_ID')
-        shared_drive_id = os.getenv('SHARED_DRIVE_ID')
         
         if not drive_folder_id:
             result["error"] = "Variável de ambiente DRIVE_FOLDER_ID não está definida."
             print("❌ Erro: DRIVE_FOLDER_ID faltando.")
             return result
         
-        if not shared_drive_id:
-            result["error"] = "Variável de ambiente SHARED_DRIVE_ID não está definida."
-            print("❌ Erro: SHARED_DRIVE_ID faltando.")
-            return result
-
+        # O código foi simplificado para não usar o SHARED_DRIVE_ID ou a delegação de domínio
+        # que são funcionalidades do Google Workspace. Agora ele usará uma conta de serviço
+        # para fazer o upload para uma pasta compartilhada no Drive pessoal.
         try:
             # 1. Configuração do serviço
             creds = service_account.Credentials.from_service_account_file(
                 "credentials.json",
-                scopes=['https://www.googleapis.com/auth/drive']
+                scopes=['https://www.googleapis.com/auth/drive'],
             )
             service = build('drive', 'v3', credentials=creds)
 
-            # 2. Upload para Shared Drive
-            print("⬆️ Iniciando upload do backup para o Google Drive...")
+            # 2. Upload para o Drive pessoal
+            print("⬆️ Iniciando upload do backup para o Google Drive pessoal...")
             print(f"   > Usando Folder ID: {drive_folder_id}")
-            print(f"   > Usando Shared Drive ID: {shared_drive_id}")
             
             file_metadata = {
                 'name': f"backup_{datetime.now().strftime('%Y-%m-%d')}.json",
                 'parents': [drive_folder_id],
-                'driveId': shared_drive_id
             }
             
             media = MediaFileUpload(
@@ -172,7 +167,6 @@ class DataManager:
             file = service.files().create(
                 body=file_metadata,
                 media_body=media,
-                supportsAllDrives=True, # Essencial para Shared Drives
                 fields='id'
             ).execute()
             
