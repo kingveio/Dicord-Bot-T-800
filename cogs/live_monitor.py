@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands, tasks
 import logging
 from datetime import datetime, timedelta
+from aiohttp import ClientError
 
 logger = logging.getLogger(__name__)
 
@@ -22,44 +23,45 @@ class LiveMonitor(commands.Cog):
             await self.bot.wait_until_ready()
             
             for guild in self.bot.guilds:
-                # Obtém dados da guilda (sem await)
-                guild_data = self.bot.data_manager.get_guild(guild.id)
-                
-                # Verifica se há configuração de cargo de live
-                if not guild_data["config"]["live_role_id"]:
-                    continue
+                try:
+                    guild_data = self.bot.data_manager.get_guild(guild.id)
                     
-                live_role = guild.get_role(guild_data["config"]["live_role_id"])
-                if not live_role:
-                    logger.warning(f"Cargo de live não encontrado na guilda {guild.id}")
-                    continue
-
-                # Verifica cada usuário cadastrado
-                for user_id_str, user_data in guild_data["users"].items():
-                    user_id = int(user_id_str)
-                    member = guild.get_member(user_id)
-                    if not member:
+                    if not guild_data["config"]["live_role_id"]:
                         continue
-                    
-                    # Verificação Twitch
-                    if user_data.get("twitch"):
-                        await self._check_platform(
-                            member=member,
-                            role=live_role,
-                            platform_data=user_data["twitch"],
-                            platform_name="Twitch",
-                            check_func=self.bot.twitch_api.is_live
-                        )
-                    
-                    # Verificação YouTube
-                    if user_data.get("youtube"):
-                        await self._check_platform(
-                            member=member,
-                            role=live_role,
-                            platform_data=user_data["youtube"],
-                            platform_name="YouTube",
-                            check_func=self.bot.youtube_api.is_live
-                        )
+                        
+                    live_role = guild.get_role(guild_data["config"]["live_role_id"])
+                    if not live_role:
+                        logger.warning(f"Cargo de live não encontrado na guilda {guild.id}")
+                        continue
+
+                    for user_id_str, user_data in guild_data["users"].items():
+                        user_id = int(user_id_str)
+                        member = guild.get_member(user_id)
+                        if not member:
+                            continue
+                        
+                        # Verificação Twitch
+                        if user_data.get("twitch"):
+                            await self._check_platform(
+                                member=member,
+                                role=live_role,
+                                platform_data=user_data["twitch"],
+                                platform_name="Twitch",
+                                check_func=self.bot.twitch_api.is_live
+                            )
+                        
+                        # Verificação YouTube
+                        if user_data.get("youtube"):
+                            await self._check_platform(
+                                member=member,
+                                role=live_role,
+                                platform_data=user_data["youtube"],
+                                platform_name="YouTube",
+                                check_func=self.bot.youtube_api.is_live
+                            )
+                except Exception as e:
+                    logger.error(f"Erro ao processar guilda {guild.id}: {e}", exc_info=True)
+                    continue
                         
         except Exception as e:
             logger.error(f"Erro no monitoramento: {e}", exc_info=True)
@@ -81,25 +83,39 @@ class LiveMonitor(commands.Cog):
                 platform_data["is_live"] = True
                 
                 if role not in member.roles:
-                    await member.add_roles(role)
-                    logger.info(f"{member.display_name} entrou em live na {platform_name}")
-                    
-                    # Envia notificação se configurado
-                    guild_data = self.bot.data_manager.get_guild(member.guild.id)
-                    if guild_data["config"]["notify_channel_id"]:
-                        channel = member.guild.get_channel(guild_data["config"]["notify_channel_id"])
-                        if channel:
-                            await channel.send(
-                                f"🎮 {member.mention} está ao vivo na {platform_name}!\n"
-                                f"**{title}**"
-                            )
+                    try:
+                        await member.add_roles(role)
+                        logger.info(f"{member.display_name} entrou em live na {platform_name}")
+                        
+                        guild_data = self.bot.data_manager.get_guild(member.guild.id)
+                        if guild_data["config"]["notify_channel_id"]:
+                            channel = member.guild.get_channel(guild_data["config"]["notify_channel_id"])
+                            if channel:
+                                try:
+                                    await channel.send(
+                                        f"🎮 {member.mention} está ao vivo na {platform_name}!\n"
+                                        f"**{title}**"
+                                    )
+                                except discord.HTTPException as e:
+                                    logger.error(f"Erro ao enviar notificação: {e}")
+                    except discord.Forbidden:
+                        logger.error(f"Sem permissão para adicionar cargo em {member.display_name}")
+                    except discord.HTTPException as e:
+                        logger.error(f"Erro HTTP ao atualizar cargos: {e}")
             else:
                 platform_data["is_live"] = False
                 if role in member.roles:
-                    await member.remove_roles(role)
+                    try:
+                        await member.remove_roles(role)
+                    except discord.Forbidden:
+                        logger.error(f"Sem permissão para remover cargo de {member.display_name}")
+                    except discord.HTTPException as e:
+                        logger.error(f"Erro HTTP ao remover cargo: {e}")
                     
+        except ClientError as e:
+            logger.warning(f"Erro de conexão ao verificar {platform_name}: {e}")
         except Exception as e:
-            logger.error(f"Erro ao verificar {platform_name}: {e}")
+            logger.error(f"Erro ao verificar {platform_name}: {e}", exc_info=True)
 
 async def setup(bot):
     await bot.add_cog(LiveMonitor(bot))
