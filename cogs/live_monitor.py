@@ -3,6 +3,7 @@ from discord.ext import commands, tasks
 import logging
 from datetime import datetime
 import random
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -31,22 +32,30 @@ class LiveMonitor(commands.Cog):
                 self.live_role = guild.get_role(guild_data["live_role_id"])
                 if not self.live_role:
                     continue
-                except Exception as e:
-                logger.error(f"Erro no check_live: {e}", exc_info=True)
-                # Reinicia a tarefa após 5 minutos se falhar
-                await asyncio.sleep(300)
-                self.check_live.restart()
-                # Verifica todas as plataformas
-                live_status = {}
-                for platform, data in user_data["platforms"].items():
-                    is_live = await self._check_platform(data["channel_id"], platform)
-                    live_status[platform] = is_live
-                    if is_live and not data["is_live"]:
-                        await self._notify_live(member, platform)
-                    data["is_live"] = is_live
-                
-                # Atualiza cargo
-                await self._update_live_role(member, live_status)
+
+                # Processa cada usuário
+                for user_id, user_data in guild_data.get("users", {}).items():
+                    member = guild.get_member(int(user_id))
+                    if not member:
+                        continue
+
+                    # Verifica todas as plataformas
+                    live_status = {}
+                    for platform, data in user_data.get("platforms", {}).items():
+                        is_live = await self._check_platform(data["channel_id"], platform)
+                        live_status[platform] = is_live
+                        if is_live and not data["is_live"]:
+                            await self._notify_live(member, platform)
+                        data["is_live"] = is_live
+                    
+                    # Atualiza cargo
+                    await self._update_live_role(member, live_status)
+
+        except Exception as e:
+            logger.error(f"Erro no check_live: {e}", exc_info=True)
+            # Reinicia a tarefa após 5 minutos se falhar
+            await asyncio.sleep(300)
+            self.check_live.restart()
 
     async def _check_platform(self, channel_id, platform):
         """Verifica se um canal está live"""
