@@ -36,7 +36,12 @@ async def on_ready():
         print(f"Sincronizei {len(synced)} comando(s) de barra.")
     except Exception as e:
         print(f"Falha ao sincronizar comandos: {e}")
-
+@bot.event
+async def on_ready():
+    # Carrega os cogs usando load_extension (não precisa modificar as funções setup)
+    for filename in os.listdir('./cogs'):
+        if filename.endswith('.py'):
+            await bot.load_extension(f'cogs.{filename[:-3]}')  # Note o 'await' aqui
 # "Hasta la vista, baby." (comando de desligamento)
 @bot.command(name="terminate")
 async def terminate(ctx):
