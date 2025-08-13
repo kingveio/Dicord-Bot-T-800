@@ -1,56 +1,83 @@
 import discord
 from discord.ext import commands, tasks
-from services.twitch_api import TwitchAPI
-from services.youtube_api import YouTubeAPI
-from data.data_manager import DataManager
 import logging
+from typing import Optional
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
 class LiveMonitor(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.twitch = TwitchAPI()
-        self.youtube = YouTubeAPI()
-        self.data = DataManager()
+        self.last_check = {}
+        self.check_interval = timedelta(minutes=5)
         self.monitor.start()
-    
+
     def cog_unload(self):
         self.monitor.cancel()
-    
+
     @tasks.loop(minutes=5.0)
     async def monitor(self):
         await self.bot.wait_until_ready()
         
         for guild in self.bot.guilds:
-            guild_data = self.data.get_guild(guild.id)
-            if not guild_data.get("config", {}).get("live_role_id"):
+            guild_data = await self.bot.data_manager.get_guild(guild.id)
+            if not guild_data.config.live_role_id:
                 continue
                 
-            for user_id, user_data in guild_data.get("users", {}).items():
-                member = guild.get_member(int(user_id))
+            live_role = guild.get_role(guild_data.config.live_role_id)
+            if not live_role:
+                continue
+
+            for user_id, user_data in guild_data.users.items():
+                member = guild.get_member(user_id)
                 if not member:
                     continue
                 
-                is_live = False
-                live_role = guild.get_role(guild_data["config"]["live_role_id"])
+                # Verificar Twitch
+                twitch_status = None
+                if user_data.twitch:
+                    twitch_status = await self._check_twitch(user_data.twitch.username, member, live_role)
                 
-                # Check Twitch
-                if user_data.get("twitch"):
-                    is_live = await self.twitch.is_live(user_data["twitch"])
-                
-                # Check YouTube if not live on Twitch
-                if not is_live and user_data.get("youtube"):
-                    is_live = await self.youtube.is_live(user_data["youtube"])
-                
-                # Update role
-                if live_role:
-                    if is_live and live_role not in member.roles:
-                        await member.add_roles(live_role)
-                        logger.info(f"Added live role to {member.display_name}")
-                    elif not is_live and live_role in member.roles:
-                        await member.remove_roles(live_role)
-                        logger.info(f"Removed live role from {member.display_name}")
+                # Verificar YouTube se não estiver live na Twitch
+                if not twitch_status and user_data.youtube:
+                    await self._check_youtube(user_data.youtube.username, member, live_role)
+
+    async def _check_twitch(self, username: str, member: discord.Member, role: discord.Role) -> bool:
+        """Verifica status na Twitch e atualiza cargo"""
+        is_live, title = await self.bot.twitch_api.is_live(username)
+        
+        if is_live and role not in member.roles:
+            await self.bot.discord_service.assign_role(member, role.id)
+            if self.bot.discord_service.get_guild(member.guild.id).config.notify_channel_id:
+                await self.bot.discord_service.send_notification(
+                    member.guild.id,
+                    f"🎮 {member.mention} está ao vivo na Twitch!\n**{title}**"
+                )
+            return True
+        
+        elif not is_live and role in member.roles:
+            await self.bot.discord_service.remove_role(member, role.id)
+        
+        return False
+
+    async def _check_youtube(self, username: str, member: discord.Member, role: discord.Role) -> bool:
+        """Verifica status no YouTube e atualiza cargo"""
+        is_live, title = await self.bot.youtube_api.is_live(username)
+        
+        if is_live and role not in member.roles:
+            await self.bot.discord_service.assign_role(member, role.id)
+            if self.bot.discord_service.get_guild(member.guild.id).config.notify_channel_id:
+                await self.bot.discord_service.send_notification(
+                    member.guild.id,
+                    f"🎥 {member.mention} está ao vivo no YouTube!\n**{title}**"
+                )
+            return True
+        
+        elif not is_live and role in member.roles:
+            await self.bot.discord_service.remove_role(member, role.id)
+        
+        return False
 
 async def setup(bot):
     await bot.add_cog(LiveMonitor(bot))
