@@ -133,7 +133,6 @@ class DataManager:
             return result
         
         drive_folder_id = os.getenv('DRIVE_FOLDER_ID')
-        shared_drive_id = os.getenv('SHARED_DRIVE_ID')
         
         if not drive_folder_id:
             result["error"] = "Variável de ambiente DRIVE_FOLDER_ID não está definida."
