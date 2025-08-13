@@ -1,47 +1,37 @@
 import os
 from dotenv import load_dotenv
 from typing import Optional
-import base64
-import json
 
 load_dotenv()
 
 class Config:
-    # Discord
+    # Configurações obrigatórias
     DISCORD_TOKEN: str = os.getenv("DISCORD_TOKEN")
-    
-    # Twitch
     TWITCH_CLIENT_ID: str = os.getenv("TWITCH_CLIENT_ID")
     TWITCH_CLIENT_SECRET: str = os.getenv("TWITCH_CLIENT_SECRET")
+    YOUTUBE_API_KEY: str = os.getenv("YOUTUBE_API_KEY")
     
-    # Google Drive (opcional)
-    DRIVE_FOLDER_ID: Optional[str] = os.getenv("DRIVE_FOLDER_ID")
-    GOOGLE_CREDENTIALS: Optional[dict] = None
-    
-    # Geral
-    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+    # Configurações opcionais
     RENDER_SERVICE_NAME: Optional[str] = os.getenv("RENDER_SERVICE_NAME")
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+    DRIVE_FOLDER_ID: Optional[str] = os.getenv("DRIVE_FOLDER_ID")
+    GOOGLE_CREDENTIALS: Optional[str] = os.getenv("GOOGLE_CREDENTIALS")
 
     @classmethod
     def validate(cls):
-        required = [
+        """Valida as configurações obrigatórias"""
+        required_vars = [
             ("DISCORD_TOKEN", cls.DISCORD_TOKEN),
             ("TWITCH_CLIENT_ID", cls.TWITCH_CLIENT_ID),
-            ("TWITCH_CLIENT_SECRET", cls.TWITCH_CLIENT_SECRET)
+            ("TWITCH_CLIENT_SECRET", cls.TWITCH_CLIENT_SECRET),
+            ("YOUTUBE_API_KEY", cls.YOUTUBE_API_KEY)
         ]
         
-        missing = [name for name, value in required if not value]
+        missing = [name for name, value in required_vars if not value]
         if missing:
-            raise ValueError(f"Variáveis ausentes: {', '.join(missing)}")
-
-        # Decodifica credenciais do Google se existirem
-        if os.getenv("GOOGLE_CREDENTIALS"):
-            try:
-                decoded = base64.b64decode(os.getenv("GOOGLE_CREDENTIALS"))
-                cls.GOOGLE_CREDENTIALS = json.loads(decoded.decode('utf-8'))
-            except Exception as e:
-                raise ValueError(f"Erro ao decodificar GOOGLE_CREDENTIALS: {e}")
+            raise ValueError(f"Variáveis de ambiente ausentes: {', '.join(missing)}")
 
     @classmethod
     def is_render(cls) -> bool:
+        """Verifica se está rodando no Render"""
         return "RENDER" in os.environ
