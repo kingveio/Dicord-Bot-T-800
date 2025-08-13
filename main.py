@@ -25,7 +25,28 @@ class T800Bot(commands.Bot):
         await self.load_extension("cogs.youtube")
         await self.load_extension("cogs.twitch")
         await self.load_extension("cogs.settings")
-
+        try:
+        # Carrega dados primeiro
+        await self.data_manager.load()
+        
+        # Depois carrega os cogs
+        cogs = [
+            "cogs.live_monitor",
+            "cogs.youtube",
+            "cogs.twitch",
+            "cogs.settings"
+        ]
+        
+        for cog in cogs:
+            try:
+                await self.load_extension(cog)
+                logger.info(f"✅ Cog carregado: {cog}")
+            except Exception as e:
+                logger.error(f"❌ Falha ao carregar {cog}: {e}")
+                
+    except Exception as e:
+        logger.critical(f"Falha no setup: {e}", exc_info=True)
+        raise
 bot = T800Bot()
 
 if __name__ == "__main__":
