@@ -4,6 +4,8 @@ import os
 
 class DataManager:
     def __init__(self, filepath="data/data.json"):
+        # Cria o diretório se não existir (correção para evitar erros no Render)
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
         self.filepath = filepath
         self.data = self._load_data()
 
