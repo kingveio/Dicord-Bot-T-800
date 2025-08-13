@@ -82,66 +82,80 @@ class DataManager:
             return ""
 
     def backup_to_drive(self) -> Dict:
-    """Realiza backup completo para o Google Drive"""
+    """Realiza backup completo para o Google Drive com tratamento robusto de erros"""
     result = {
         "success": False,
         "file_id": None,
-        "file_url": None,  # Corrigido aqui (aspas consistentes)
-        "timestamp": datetime.now().isoformat()
+        "file_url": None,
+        "timestamp": datetime.now().isoformat(),
+        "error": None
     }
 
-    # Verificação adicional de configurações
-    if not os.getenv('DRIVE_FOLDER_ID') or not os.getenv('SHARED_DRIVE_ID'):
-        result["error"] = "Configurações do Drive não encontradas"
+    # Verificação preliminar
+    required_envs = ['GOOGLE_CREDENTIALS', 'DRIVE_FOLDER_ID', 'SHARED_DRIVE_ID']
+    missing = [env for env in required_envs if not os.getenv(env)]
+    
+    if missing:
+        result["error"] = f"Variáveis de ambiente faltando: {', '.join(missing)}"
         return result
 
     try:
         # 1. Criar backup local
         backup_path = self._create_backup("drive")
-        if not backup_path:
-            result["error"] = "Falha ao criar backup local"
+        if not backup_path or not os.path.exists(backup_path):
+            result["error"] = "Falha ao criar ou localizar backup local"
             return result
 
         # 2. Configurar serviço do Google Drive
+        if not os.path.exists("credentials.json"):
+            result["error"] = "Arquivo credentials.json não encontrado"
+            return result
+
         creds = service_account.Credentials.from_service_account_file(
             "credentials.json",
             scopes=['https://www.googleapis.com/auth/drive.file']
         )
-        service = build('drive', 'v3', credentials=creds)
-
-        # 3. Upload do arquivo
-        file_metadata = {
-            'name': os.path.basename(backup_path),
-            'parents': [os.getenv('DRIVE_FOLDER_ID')],
-            'supportsAllDrives': True,
-            'driveId': os.getenv('SHARED_DRIVE_ID')
-        }
         
-        media = MediaFileUpload(backup_path, mimetype='application/json')
-        
-        file = service.files().create(
-            body=file_metadata,
-            media_body=media,
-            fields='id,name,webViewLink',
-            supportsAllDrives=True
-        ).execute()
+        # 3. Upload com verificação de timeout
+        with build('drive', 'v3', credentials=creds) as service:
+            file_metadata = {
+                'name': os.path.basename(backup_path),
+                'parents': [os.getenv('DRIVE_FOLDER_ID')],
+                'supportsAllDrives': True,
+                'driveId': os.getenv('SHARED_DRIVE_ID')
+            }
+            
+            media = MediaFileUpload(
+                backup_path,
+                mimetype='application/json',
+                resumable=True
+            )
+            
+            file = service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields='id,name,webViewLink',
+                supportsAllDrives=True
+            ).execute(timeout=300)  # Timeout de 5 minutos
 
-        # 4. Atualizar status
-        self.data["metadata"]["last_backup"] = result["timestamp"]
-        self._save_data()
+            # 4. Atualizar status
+            self.data["metadata"]["last_backup"] = result["timestamp"]
+            self._save_data()
 
-        result.update({
-            "success": True,
-            "file_id": file['id'],
-            "file_url": file.get('webViewLink'),  # Corrigido aqui
-            "file_name": file['name']
-        })
+            result.update({
+                "success": True,
+                "file_id": file['id'],
+                "file_url": file.get('webViewLink'),
+                "file_name": file['name']
+            })
 
-    except HttpError as e:
-        error_details = str(e).replace('>', '').replace('<', '')  # Melhoria para logs
-        result["error"] = f"Erro do Google Drive: {error_details}"
+    except HttpError as http_err:
+        err_details = http_err.error_details if hasattr(http_err, 'error_details') else str(http_err)
+        result["error"] = f"Erro HTTP {http_err.status_code}: {err_details}"
+    except TimeoutError:
+        result["error"] = "Timeout: operação excedeu 5 minutos"
     except Exception as e:
-        result["error"] = f"Erro inesperado: {str(e)}"
+        result["error"] = f"Erro inesperado: {type(e).__name__}: {str(e)}"
 
     return result
 
