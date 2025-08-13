@@ -1,43 +1,33 @@
 import discord
 from discord.ext import commands
-import logging
-
-logger = logging.getLogger(__name__)
 
 class TwitchCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="vincular_twitch", description="Vincula uma conta Twitch a um usuário")
+    @commands.command(name="adicionar_twitch")
     @commands.has_permissions(administrator=True)
-    async def link_twitch(self, ctx, canal: str, usuario: discord.Member):
+    async def add_twitch(self, ctx, canal: str, usuario: discord.Member):
+        """Vincula uma conta Twitch a um usuário"""
+        # Exemplo: !adicionar_twitch kingveio @user
         success = await self.bot.data_manager.link_account(
             ctx.guild.id,
             usuario,
             "twitch",
             canal.lower().strip()
         )
-        quote = await self.bot.log_action(f"Twitch vinculado a {usuario.display_name}")
-        await ctx.send(
-            f"✅ Conta **{canal}** vinculada a {usuario.mention}\n"
-            f"*{quote}*",
-            ephemeral=True
-        )
+        await ctx.send(f"✅ Twitch `{canal}` vinculado a {usuario.mention}" if success else "❌ Falha ao vincular")
 
-    @commands.hybrid_command(name="remover_twitch", description="Remove vínculo da Twitch")
+    @commands.command(name="remover_twitch")
     @commands.has_permissions(administrator=True)
-    async def unlink_twitch(self, ctx, usuario: discord.Member):
+    async def remove_twitch(self, ctx, usuario: discord.Member):
+        """Remove vínculo da Twitch"""
         success = await self.bot.data_manager.remove_account(
             ctx.guild.id,
             usuario.id,
             "twitch"
         )
-        quote = await self.bot.log_action(f"Twitch desvinculado de {usuario.display_name}")
-        await ctx.send(
-            f"🗑️ Twitch desvinculado de {usuario.mention}\n"
-            f"*{quote}*",
-            ephemeral=True
-        )
+        await ctx.send(f"🗑️ Twitch desvinculado de {usuario.mention}" if success else "ℹ️ Nada para remover")
 
 async def setup(bot):
     await bot.add_cog(TwitchCommands(bot))
