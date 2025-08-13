@@ -1,12 +1,13 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
-import os
-from config import DISCORD_TOKEN
 from data.data_manager import DataManager
-from aiohttp import web
+from flask import Flask
 from threading import Thread
-import datetime
+import os
+from datetime import datetime, timedelta
+import asyncio
+import base64
 
 # Configuração inicial
 intents = discord.Intents.all()
@@ -18,21 +19,40 @@ flask_app = Flask(__name__)
 
 @flask_app.route('/')
 def home():
-    return "T-800 Online | Comandos: /vinculartwitch /minhasvinculacoes"
+    last_backup = data_manager.data["metadata"].get("last_backup", "Nunca")
+    return f"""
+    <h1>T-800 Status</h1>
+    <p><strong>Online desde:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+    <p><strong>Último backup:</strong> {last_backup}</p>
+    <p><strong>Servidores:</strong> {len(bot.guilds)}</p>
+    """
 
 def run_flask():
     flask_app.run(host='0.0.0.0', port=8080)
 
-# COMANDOS PRINCIPAIS
-@bot.tree.command(name="vinculartwitch", description="Vincula seu canal da Twitch")
-@app_commands.describe(username="Seu nome de usuário na Twitch")
+# COMANDOS DE CONFIGURAÇÃO
+@bot.tree.command(name="configurar_backup", description="[ADMIN] Ativa/desativa backups automáticos")
+@app_commands.default_permissions(administrator=True)
+async def config_backup(interaction: discord.Interaction, ativar: bool):
+    guild_data = data_manager.get_guild_data(interaction.guild.id)
+    guild_data["config"]["backup_enabled"] = ativar
+    data_manager._save_data()
+    
+    await interaction.response.send_message(
+        f"✅ Backups automáticos {'ativados' if ativar else 'desativados'}!",
+        ephemeral=True
+    )
+
+# COMANDOS DE USUÁRIO
+@bot.tree.command(name="vincular_twitch", description="Vincula sua conta da Twitch")
+@app_commands.describe(username="Seu nome de usuário na Twitch (sem URL)")
 async def vincular_twitch(interaction: discord.Interaction, username: str):
     try:
         success = data_manager.link_user_channel(
             guild=interaction.guild,
             user=interaction.user,
             platform="twitch",
-            channel_id=username.lower().strip()
+            channel_id=username
         )
         
         if success:
@@ -42,34 +62,7 @@ async def vincular_twitch(interaction: discord.Interaction, username: str):
             )
         else:
             await interaction.response.send_message(
-                "❌ Ocorreu um erro ao vincular sua Twitch",
-                ephemeral=True
-            )
-    except Exception as e:
-        await interaction.response.send_message(
-            f"⚠️ Erro: {str(e)}",
-            ephemeral=True
-        )
-
-@bot.tree.command(name="vincular_youtube", description="Vincula seu canal do YouTube")
-@app_commands.describe(channel_id="ID do seu canal YouTube (ex: UC123...)")
-async def vincular_youtube(interaction: discord.Interaction, channel_id: str):
-    try:
-        success = data_manager.link_user_channel(
-            guild=interaction.guild,
-            user=interaction.user,
-            platform="youtube",
-            channel_id=channel_id.strip()
-        )
-        
-        if success:
-            await interaction.response.send_message(
-                f"✅ YouTube vinculado com sucesso! (ID: {channel_id})",
-                ephemeral=True
-            )
-        else:
-            await interaction.response.send_message(
-                "❌ Ocorreu um erro ao vincular seu YouTube",
+                "❌ Falha ao vincular conta Twitch",
                 ephemeral=True
             )
     except Exception as e:
@@ -83,7 +76,7 @@ async def minhas_vinculacoes(interaction: discord.Interaction):
     try:
         platforms = data_manager.get_user_platforms(
             guild_id=interaction.guild.id,
-            user=interaction.user
+            user_id=interaction.user.id
         )
         
         embed = discord.Embed(
@@ -106,67 +99,71 @@ async def minhas_vinculacoes(interaction: discord.Interaction):
             )
         
         if not platforms.get("twitch") and not platforms.get("youtube"):
-            embed.description = "Nenhum canal vinculado ainda!"
+            embed.description = "Você não tem nenhum canal vinculado!"
         
-        embed.set_footer(text=f"ID do Discord: {interaction.user.id}")
         await interaction.response.send_message(embed=embed, ephemeral=True)
         
     except Exception as e:
         await interaction.response.send_message(
-            f"⚠️ Erro ao recuperar vinculações: {str(e)}",
+            f"⚠️ Erro: {str(e)}",
             ephemeral=True
         )
 
-@bot.tree.command(name="remover_twitch", description="Remove sua vinculação com a Twitch")
-async def remover_twitch(interaction: discord.Interaction):
+# COMANDOS DE ADMIN
+@bot.tree.command(name="forcar_backup", description="[ADMIN] Executa um backup manual")
+@app_commands.default_permissions(administrator=True)
+async def forcar_backup(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
+    
     try:
-        removed = data_manager.remove_user_platform(
-            guild_id=interaction.guild.id,
-            user_id=interaction.user.id,
-            platform="twitch"
+        result = data_manager.backup_to_drive()
+        
+        embed = discord.Embed(
+            title="📂 Resultado do Backup",
+            color=discord.Color.green() if result["success"] else discord.Color.red()
         )
         
-        if removed:
-            await interaction.response.send_message(
-                "✅ Vinculação com Twitch removida!",
-                ephemeral=True
+        if result["success"]:
+            embed.description = f"Backup realizado com sucesso!\n**Arquivo:** {result['file_name']}"
+            embed.add_field(
+                name="🔗 Link",
+                value=f"[Abrir no Drive]({result['file_url']})",
+                inline=False
             )
         else:
-            await interaction.response.send_message(
-                "ℹ️ Você não tinha nenhuma Twitch vinculada",
-                ephemeral=True
+            embed.description = "❌ Falha no backup"
+            embed.add_field(
+                name="Erro",
+                value=result.get("error", "Desconhecido"),
+                inline=False
             )
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        
     except Exception as e:
-        await interaction.response.send_message(
-            f"⚠️ Erro: {str(e)}",
+        await interaction.followup.send(
+            f"⚠️ Erro crítico: {str(e)}",
             ephemeral=True
         )
 
-# ADMIN COMMANDS
-@bot.tree.command(name="setar_cargo_live", description="[ADMIN] Define o cargo para streamers")
-@app_commands.default_permissions(administrator=True)
-@app_commands.describe(cargo="O cargo que será dado a streamers ao vivo")
-async def setar_cargo(interaction: discord.Interaction, cargo: discord.Role):
+# TAREFAS AUTOMÁTICAS
+@tasks.loop(hours=24)
+async def daily_backup():
     try:
-        data_manager.update_live_role(
-            guild=interaction.guild,
-            role=cargo
-        )
-        await interaction.response.send_message(
-            f"✅ Cargo {cargo.mention} configurado para streamers ao vivo!",
-            ephemeral=True
-        )
+        print("⏳ Executando backup diário...")
+        result = data_manager.backup_to_drive()
+        
+        if result["success"]:
+            print(f"✅ Backup realizado: {result['file_name']}")
+        else:
+            print(f"❌ Falha no backup: {result.get('error', 'Desconhecido')}")
+            
     except Exception as e:
-        await interaction.response.send_message(
-            f"⚠️ Erro: {str(e)}",
-            ephemeral=True
-        )
+        print(f"⚠️ Erro na tarefa de backup: {str(e)}")
 
-# EVENTOS
 @bot.event
 async def on_ready():
     print(f'✅ Bot conectado como {bot.user} (ID: {bot.user.id})')
-    print(f'📅 Iniciado em: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
     print('------')
     
     # Inicia servidor web
@@ -178,15 +175,21 @@ async def on_ready():
         print(f'🔁 {len(synced)} comandos sincronizados')
     except Exception as e:
         print(f'❌ Erro ao sincronizar comandos: {e}')
-
-    # Carrega dados iniciais
-    data_manager.load_initial_data()
+    
+    # Inicia tarefas automáticas
+    daily_backup.start()
+    print("🔄 Tarefas automáticas iniciadas")
 
 # INICIALIZAÇÃO
 if __name__ == "__main__":
-    # Verifica se o token existe
-    if not DISCORD_TOKEN:
+    # Configura credenciais do Google Drive se existirem
+    if os.getenv('GOOGLE_CREDENTIALS'):
+        with open("credentials.json", "wb") as f:
+            f.write(base64.b64decode(os.getenv('GOOGLE_CREDENTIALS')))
+    
+    # Verifica token
+    if not os.getenv('DISCORD_TOKEN'):
         raise ValueError("❌ Token do Discord não configurado!")
     
     print("🚀 Iniciando T-800...")
-    bot.run(DISCORD_TOKEN)
+    bot.run(os.getenv('DISCORD_TOKEN'))
