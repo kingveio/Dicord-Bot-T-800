@@ -22,6 +22,15 @@ class YouTubeCommands(commands.Cog):
         self.data_manager.add_user(guild_id, user_id, youtube_name=username)
         
         await interaction.response.send_message(f"Alvo '{username}' adicionado à lista de vigilância do YouTube para este servidor. Eu voltarei a verificar.", ephemeral=True)
+    @discord.app_commands.command(
+    name="remover_youtube",
+    description="Remove seu canal do YouTube do monitoramento"
+)
+async def remover_youtube(self, interaction: discord.Interaction):
+    guild_id = interaction.guild.id
+    user_id = interaction.user.id
+    self.data_manager.remove_user_platform(guild_id, user_id, platform="youtube")
+    await interaction.response.send_message("✅ Canal do YouTube removido com sucesso!", ephemeral=True)
 
 def setup(bot):
     bot.add_cog(YouTubeCommands(bot))
