@@ -26,9 +26,9 @@ def home():
     <p><strong>Último backup:</strong> {last_backup}</p>
     <p><strong>Servidores:</strong> {len(bot.guilds)}</p>
     """
-
 def run_flask():
-    flask_app.run(host='0.0.0.0', port=8080)
+    port = int(os.environ.get('PORT', 8080))  # Usa a porta do Render ou 8080 como fallback
+    flask_app.run(host='0.0.0.0', port=port)
 
 # COMANDOS DE CONFIGURAÇÃO
 @bot.tree.command(name="configurar_backup", description="[ADMIN] Ativa/desativa backups automáticos")
