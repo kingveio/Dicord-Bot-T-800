@@ -1,12 +1,19 @@
 import discord
 from discord.ext import commands
 import logging
+from config import Config
+import logging
 
 logger = logging.getLogger(__name__)
 
-class YouTubeCommands(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
+class YouTubeAPI:
+    def __init__(self):
+        if not Config.YOUTUBE_API_KEY:
+            raise ValueError("YouTube API Key não configurada")
+        
+        self.api_key = Config.YOUTUBE_API_KEY
+        self.base_url = "https://www.googleapis.com/youtube/v3"
+        logger.info("✅ YouTube API configurada")
 
     @commands.command(name="adicionar_youtube")
     @commands.has_permissions(administrator=True)
