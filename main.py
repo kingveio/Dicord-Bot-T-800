@@ -65,7 +65,8 @@ class Bot(commands.Bot):
         try:
             # 1. Inicia servidor de health check
             await self.health_server.start()
-            
+            await self.tree.sync()  # Sincroniza comandos slash globais
+            logger.info("✅ Comandos slash sincronizados")
             # 2. Configura sessão HTTP
             self.session = ClientSession(
                 timeout=ClientTimeout(total=10),
