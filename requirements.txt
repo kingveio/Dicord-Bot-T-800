@@ -6,3 +6,4 @@ python-dotenv>=1.0.0
 twitchio>=3.1.0  # Versão mais recente estável disponível
 aiohttp>=3.8.5
 flask>=2.0.0
+aiofiles
