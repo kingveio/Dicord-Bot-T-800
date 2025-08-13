@@ -140,7 +140,7 @@ class DataManager:
                 scopes=['https://www.googleapis.com/auth/drive.file']
             )
             
-            # 3. Upload com verificação de timeout
+            # 3. Upload sem timeout (compatível com versões mais antigas)
             with build('drive', 'v3', credentials=creds) as service:
                 file_metadata = {
                     'name': os.path.basename(backup_path),
@@ -155,12 +155,13 @@ class DataManager:
                     resumable=True
                 )
                 
+                # Versão modificada sem parâmetro timeout
                 file = service.files().create(
                     body=file_metadata,
                     media_body=media,
                     fields='id,name,webViewLink',
                     supportsAllDrives=True
-                ).execute(timeout=300)  # Timeout de 5 minutos
+                ).execute()
 
                 # 4. Atualizar status
                 self.data["metadata"]["last_backup"] = result["timestamp"]
@@ -176,8 +177,6 @@ class DataManager:
         except HttpError as http_err:
             err_details = http_err.error_details if hasattr(http_err, 'error_details') else str(http_err)
             result["error"] = f"Erro HTTP {http_err.status_code}: {err_details}"
-        except TimeoutError:
-            result["error"] = "Timeout: operação excedeu 5 minutos"
         except json.JSONDecodeError as e:
             result["error"] = f"Credenciais inválidas (JSON malformado): {e}"
         except Exception as e:
