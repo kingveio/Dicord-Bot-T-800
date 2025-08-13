@@ -1,3 +1,5 @@
+# data/data_manager.py
+# T-800: Módulo de armazenamento. Gerenciando dados na nuvem.
 import os
 import json
 import base64
@@ -9,9 +11,7 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 from googleapiclient.errors import HttpError
-from google_auth_oauthlib.flow import InstalledAppFlow
 
-# A classe DataManager foi ajustada para ter uma função de backup funcional para o Google Drive pessoal.
 class DataManager:
     """
     Gerencia os dados de streamers e configurações de guildas para um bot do Discord,
@@ -25,9 +25,8 @@ class DataManager:
         self.backup_dir = "data/backups"
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         os.makedirs(self.backup_dir, exist_ok=True)
-        # Tenta configurar as credenciais do Google Drive a partir de uma variável de ambiente.
+        
         self._setup_google_drive()
-        # Carrega ou inicializa os dados.
         self.data = self._load_or_initialize_data()
 
     def _setup_google_drive(self):
@@ -42,7 +41,6 @@ class DataManager:
             return
 
         try:
-            # Tenta decodificar a string Base64.
             decoded = base64.b64decode(creds_base64)
             with open("credentials.json", "wb") as f:
                 f.write(decoded)
@@ -124,9 +122,8 @@ class DataManager:
         Faz upload do arquivo de dados para um Google Drive pessoal usando
         uma conta de serviço com acesso a uma pasta compartilhada.
         """
-        result = {"success": False, "error": None}
+        result = {"success": False, "error": None, "file_name": None, "file_url": None}
 
-        # Verificação inicial de credenciais e variáveis de ambiente
         if not os.path.exists("credentials.json"):
             result["error"] = "Arquivo de credenciais não encontrado."
             print("❌ Erro: credentials.json não existe.")
@@ -139,45 +136,56 @@ class DataManager:
             print("❌ Erro: DRIVE_FOLDER_ID faltando.")
             return result
         
-        # O código foi simplificado para não usar o SHARED_DRIVE_ID ou a delegação de domínio
-        # que são funcionalidades do Google Workspace. Agora ele usará uma conta de serviço
-        # para fazer o upload para uma pasta compartilhada no Drive pessoal.
         try:
-            # 1. Configuração do serviço
             creds = service_account.Credentials.from_service_account_file(
                 "credentials.json",
                 scopes=['https://www.googleapis.com/auth/drive'],
             )
             service = build('drive', 'v3', credentials=creds)
 
-            # 2. Upload para o Drive pessoal
+            # Verificação adicional: Ver se a pasta existe antes do upload.
+            print(f"🔎 Verificando se a pasta com o ID '{drive_folder_id}' existe...")
+            try:
+                # O parâmetro supportsAllDrives=True é necessário para verificar pastas compartilhadas.
+                # A conta de serviço precisa ter acesso a pasta.
+                service.files().get(fileId=drive_folder_id, fields='id', supportsAllDrives=True).execute()
+                print("✅ Pasta encontrada.")
+            except HttpError as e:
+                result["error"] = f"Erro de verificação da pasta: {e.content.decode('utf-8')}"
+                print(f"❌ Erro ao verificar a pasta: {result['error']}")
+                return result
+
+            # Upload do arquivo
             print("⬆️ Iniciando upload do backup para o Google Drive pessoal...")
-            print(f"   > Usando Folder ID: {drive_folder_id}")
             
+            file_name = f"backup_{datetime.now().strftime('%Y-%m-%d')}.json"
             file_metadata = {
-                'name': f"backup_{datetime.now().strftime('%Y-%m-%d')}.json",
+                'name': file_name,
                 'parents': [drive_folder_id],
             }
             
             media = MediaFileUpload(
                 self.filepath,
-                mimetype='application/json'
+                mimetype='application/json',
+                resumable=True
             )
             
             file = service.files().create(
                 body=file_metadata,
                 media_body=media,
-                fields='id'
+                fields='id, webViewLink',
+                supportsAllDrives=True  # Adiciona suporte para shared drives no upload
             ).execute()
             
             result["success"] = True
             result["file_id"] = file.get('id')
+            result["file_name"] = file_name
+            result["file_url"] = file.get('webViewLink')
             self.data["metadata"]["last_backup"] = datetime.now().isoformat()
-            self._save_data() # Atualiza o metadado no arquivo local.
+            self._save_data()
             print(f"✅ Backup enviado com sucesso! ID do arquivo: {file.get('id')}")
             
         except HttpError as e:
-            # Aprimoramento para capturar a mensagem de erro específica do Google.
             try:
                 error_content = json.loads(e.content.decode('utf-8'))
                 error_msg = f"Erro HTTP {e.resp.status}: {error_content.get('error', {}).get('message', 'Mensagem de erro não disponível.')}"
@@ -259,7 +267,6 @@ class DataManager:
             if user_id_str in guild_data["users"] and platform in guild_data["users"][user_id_str]:
                 del guild_data["users"][user_id_str][platform]
                 
-                # Se o usuário não tiver mais plataformas vinculadas, remove-o completamente.
                 if not any(key in guild_data["users"][user_id_str] for key in ["twitch", "youtube"]):
                     del guild_data["users"][user_id_str]
                 
