@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from aiohttp import ClientSession, ClientError
+from aiohttp import ClientSession, ClientTimeout, ClientError
 import discord
 from discord.ext import commands
 from config import Config
@@ -81,7 +81,7 @@ class Bot(commands.Bot):
             except asyncio.CancelledError:
                 pass
         
-        if self.session:
+        if self.session and not self.session.closed:
             await self.session.close()
         
         await super().close()
