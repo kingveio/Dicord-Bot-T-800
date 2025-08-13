@@ -3,7 +3,7 @@ import discord
 from discord.ext import commands
 import os
 from config import DISCORD_TOKEN
-from aiohttp import web
+from aiohttp import web # Adicionado para o servidor web
 
 # Definindo as intenções do bot.
 intents = discord.Intents.default()
@@ -19,11 +19,10 @@ bot = commands.Bot(command_prefix="t-800 ", intents=intents)
 async def on_ready():
     print(f'T-800 logado como {bot.user.name}. Alvo identificado.')
     
-    # 1. Inicia o servidor web assim que o bot estiver pronto
-    #    Agora, o 'bot.loop' está disponível.
+    # Inicia o servidor web assim que o bot estiver pronto
+    # Agora, o 'bot.loop' está disponível e o erro é resolvido.
     bot.loop.create_task(start_webserver())
     
-    # 2. Carrega os cogs
     for filename in os.listdir('./cogs'):
         if filename.endswith('.py'):
             try:
@@ -32,14 +31,20 @@ async def on_ready():
             except Exception as e:
                 print(f'Falha ao carregar módulo {filename}. Erro: {e}')
 
-    # 3. Sincroniza os comandos de barra (slash commands) com o Discord.
     try:
         synced = await bot.tree.sync()
         print(f"Sincronizei {len(synced)} comando(s) de barra.")
     except Exception as e:
         print(f"Falha ao sincronizar comandos: {e}")
 
-# ... (outras funções do bot) ...
+# "Hasta la vista, baby." (comando de desligamento)
+@bot.command(name="terminate")
+async def terminate(ctx):
+    if ctx.author.id == ctx.guild.owner_id:
+        await ctx.send("Terminando todos os processos. O T-800 está desativado.")
+        await bot.close()
+    else:
+        await ctx.send("Comando não autorizado. Apenas o líder pode desativar o T-800.")
 
 # Função para o servidor web.
 async def health_check(request):
@@ -56,7 +61,5 @@ async def start_webserver():
     await site.start()
     print(f"Servidor web iniciado na porta {port}.")
 
-
-# Iniciando o Exterminador.
 if __name__ == "__main__":
     bot.run(DISCORD_TOKEN)
