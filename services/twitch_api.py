@@ -3,6 +3,7 @@ import logging
 from typing import Optional, Tuple
 from config import Config
 import time
+from aiohttp import ClientTimeout
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,7 @@ class TwitchAPI:
         self.access_token = None
         self.token_expires = 0
         self.user_cache = {}
-        self.session_timeout = aiohttp.ClientTimeout(total=10)
+        self.session_timeout = ClientTimeout(total=10)
     
     async def _get_access_token(self) -> bool:
         """Obtém token de acesso OAuth2 da Twitch"""
