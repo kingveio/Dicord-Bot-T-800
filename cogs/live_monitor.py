@@ -12,21 +12,24 @@ class LiveMonitor(commands.Cog):
         self.live_role = None
         self.check_live.start()
 
-    def cog_unload(self):
-        self.check_live.cancel()
-
     @tasks.loop(minutes=5)
     async def check_live(self):
-        """Verifica lives a cada 5 minutos"""
-        await self.bot.wait_until_ready()
-        
-        for guild in self.bot.guilds:
-            guild_data = self.bot.data_manager.get_guild(guild.id)
-            self.live_role = guild.get_role(guild_data["live_role_id"])
+        try:
+            await self.bot.wait_until_ready()
             
-            for user_id, user_data in guild_data["users"].items():
-                member = guild.get_member(int(user_id))
-                if not member:
+            for guild in self.bot.guilds:
+                # Verifica se data_manager existe
+                if not hasattr(self.bot, 'data_manager'):
+                    raise AttributeError("DataManager não inicializado")
+                
+                guild_data = self.bot.data_manager.get_guild(guild.id)
+                
+                # Verifica se as configurações existem
+                if not guild_data.get("live_role_id"):
+                    continue
+                
+                self.live_role = guild.get_role(guild_data["live_role_id"])
+                if not self.live_role:
                     continue
                 
                 # Verifica todas as plataformas
