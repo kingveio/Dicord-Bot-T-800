@@ -1,115 +1,95 @@
 import os
+import logging
+from typing import Optional, Tuple
 import base64
 import json
-import logging
-from pathlib import Path
-from typing import Optional, Tuple
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
-from googleapiclient.errors import HttpError
-import asyncio
 
 logger = logging.getLogger(__name__)
 
+try:
+    from google.oauth2 import service_account
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
+    from googleapiclient.errors import HttpError
+    HAS_GOOGLE_DEPS = True
+except ImportError:
+    HAS_GOOGLE_DEPS = False
+    logger.warning("Bibliotecas do Google não encontradas - funcionalidade do Drive será limitada")
+
 class GoogleDriveService:
     def __init__(self):
-        self.service = self._initialize_service()
-        self.drive_folder_id = os.getenv("DRIVE_FOLDER_ID")
-    
-    def _initialize_service(self):
-        """Configura o serviço do Google Drive com credenciais pessoais"""
+        self.service = None
+        if HAS_GOOGLE_DEPS:
+            self.service = self._setup_service()
+        else:
+            logger.warning("Google Drive desativado - dependências não instaladas")
+
+    def _setup_service(self):
+        """Configura o serviço do Google Drive"""
         try:
-            creds_base64 = os.getenv("GOOGLE_CREDENTIALS")
+            creds_base64 = os.getenv('GOOGLE_CREDENTIALS')
             if not creds_base64:
-                raise ValueError("Variável GOOGLE_CREDENTIALS não encontrada")
-            
+                logger.warning("Variável GOOGLE_CREDENTIALS não encontrada")
+                return None
+                
             decoded = base64.b64decode(creds_base64)
-            creds_info = json.loads(decoded.decode("utf-8"))
+            creds_info = json.loads(decoded.decode('utf-8'))
             
             creds = service_account.Credentials.from_service_account_info(
                 creds_info,
-                scopes=["https://www.googleapis.com/auth/drive"]
+                scopes=['https://www.googleapis.com/auth/drive']
             )
             
-            return build("drive", "v3", credentials=creds)
+            return build('drive', 'v3', credentials=creds)
         except Exception as e:
-            logger.error(f"Falha na inicialização do Google Drive: {e}")
+            logger.error(f"Erro ao configurar Google Drive: {e}")
             return None
-    
+
     async def upload_file(self, file_path: str) -> Tuple[bool, str]:
-        """Faz upload de um arquivo para o Google Drive pessoal"""
-        if not self.service or not self.drive_folder_id:
-            return False, "Serviço não inicializado"
+        """Tenta fazer upload de um arquivo"""
+        if not self.service:
+            return False, "Serviço não configurado"
         
         try:
-            file_name = Path(file_path).name
+            file_name = os.path.basename(file_path)
             file_metadata = {
-                "name": file_name,
-                "parents": [self.drive_folder_id]
+                'name': file_name,
+                'parents': [os.getenv('DRIVE_FOLDER_ID')]
             }
             
-            media = MediaFileUpload(
-                file_path,
-                mimetype="application/json",
-                resumable=True
-            )
+            media = MediaFileUpload(file_path, mimetype='application/json')
+            file = self.service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields='id,name'
+            ).execute()
             
-            def _sync_upload():
-                return self.service.files().create(
-                    body=file_metadata,
-                    media_body=media,
-                    fields="id,name,webViewLink"
-                ).execute()
-            
-            file = await asyncio.get_event_loop().run_in_executor(None, _sync_upload)
-            logger.info(f"Upload realizado: {file.get('name')} (ID: {file.get('id')})")
-            return True, file.get("webViewLink")
-        except HttpError as e:
-            error_msg = f"Erro HTTP {e.resp.status}: {e._get_reason()}"
-            logger.error(f"Falha no upload: {error_msg}")
-            return False, error_msg
+            return True, f"Arquivo {file.get('name')} enviado com sucesso"
         except Exception as e:
-            logger.error(f"Erro inesperado no upload: {e}")
             return False, str(e)
-    
+
     async def download_file(self, file_name: str, save_path: str) -> Tuple[bool, str]:
-        """Baixa um arquivo do Google Drive pessoal"""
-        if not self.service or not self.drive_folder_id:
-            return False, "Serviço não inicializado"
+        """Tenta baixar um arquivo"""
+        if not self.service:
+            return False, "Serviço não configurado"
         
         try:
-            query = f"name='{file_name}' and '{self.drive_folder_id}' in parents and trashed=false"
+            results = self.service.files().list(
+                q=f"name='{file_name}'",
+                fields="files(id, name)"
+            ).execute()
             
-            def _sync_search():
-                return self.service.files().list(
-                    q=query,
-                    spaces="drive",
-                    fields="files(id,name)"
-                ).execute()
-            
-            results = await asyncio.get_event_loop().run_in_executor(None, _sync_search)
-            files = results.get("files", [])
-            
-            if not files:
+            items = results.get('files', [])
+            if not items:
                 return False, "Arquivo não encontrado"
             
-            file_id = files[0]["id"]
+            request = self.service.files().get_media(fileId=items[0]['id'])
+            with open(save_path, 'wb') as f:
+                downloader = MediaIoBaseDownload(f, request)
+                done = False
+                while not done:
+                    status, done = downloader.next_chunk()
             
-            def _sync_download():
-                request = self.service.files().get_media(fileId=file_id)
-                with open(save_path, "wb") as f:
-                    downloader = MediaIoBaseDownload(f, request)
-                    while not downloader.next_chunk()[1]:
-                        pass
-            
-            await asyncio.get_event_loop().run_in_executor(None, _sync_download)
-            logger.info(f"Download realizado: {files[0]['name']}")
-            return True, save_path
-        except HttpError as e:
-            error_msg = f"Erro HTTP {e.resp.status}: {e._get_reason()}"
-            logger.error(f"Falha no download: {error_msg}")
-            return False, error_msg
+            return True, f"Arquivo {items[0]['name']} baixado com sucesso"
         except Exception as e:
-            logger.error(f"Erro inesperado no download: {e}")
             return False, str(e)
