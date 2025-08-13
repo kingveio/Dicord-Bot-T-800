@@ -13,7 +13,8 @@ class Config:
     DRIVE_FOLDER_ID: Optional[str] = os.getenv("DRIVE_FOLDER_ID")
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     RENDER_SERVICE_NAME: Optional[str] = os.getenv("RENDER_SERVICE_NAME")
-    SESSION_TIMEOUT: int = int(os.getenv("SESSION_TIMEOUT", 10))
+    SESSION_TIMEOUT: int = int(os.getenv("SESSION_TIMEOUT", "10"))
+    
     @classmethod
     def validate(cls):
         required = [
