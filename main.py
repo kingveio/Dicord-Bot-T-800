@@ -3,6 +3,7 @@ import discord
 from discord.ext import commands
 import os
 from config import DISCORD_TOKEN
+from aiohttp import web # Biblioteca para rodar o servidor web
 
 # Definindo as intenções do bot. O T-800 precisa de permissão para ver
 # os membros, presenças e o conteúdo das mensagens (para comandos de prefixo).
@@ -43,6 +44,25 @@ async def terminate(ctx):
     else:
         await ctx.send("Comando não autorizado. Apenas o líder pode desativar o T-800.")
 
-# Iniciando o Exterminador.
+# Função para o servidor web. Apenas para manter o Render feliz.
+async def health_check(request):
+    return web.Response(text="T-800 está online.")
+
+async def start_webserver():
+    app = web.Application()
+    app.router.add_get("/", health_check)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    
+    # Render usa a variável de ambiente 'PORT'. Se não existir, usamos 8080.
+    port = int(os.getenv("PORT", 8080))
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f"Servidor web iniciado na porta {port}.")
+
+
+# Iniciando o Exterminador e o servidor web.
 if __name__ == "__main__":
+    # Cria uma nova tarefa para rodar o servidor web
+    bot.loop.create_task(start_webserver())
     bot.run(DISCORD_TOKEN)
