@@ -1,6 +1,7 @@
 import os
 import json
 import base64
+import binascii
 from datetime import datetime
 from typing import Dict, Optional, Union
 import discord
@@ -24,10 +25,16 @@ class DataManager:
         try:
             creds_base64 = os.getenv('GOOGLE_CREDENTIALS')
             if creds_base64:
-                with open("credentials.json", "wb") as f:
-                    f.write(base64.b64decode(creds_base64))
+                try:
+                    decoded = base64.b64decode(creds_base64)
+                    with open("credentials.json", "wb") as f:
+                        f.write(decoded)
+                except (binascii.Error, ValueError) as e:
+                    print(f"⚠️ Credenciais do Google Drive inválidas (erro Base64): {e}")
+                    return None
         except Exception as e:
             print(f"⚠️ Erro ao configurar Google Drive: {e}")
+            return None
 
     def _load_or_initialize_data(self) -> Dict:
         """Carrega ou cria o arquivo de dados com estrutura padrão"""
@@ -51,6 +58,11 @@ class DataManager:
                     data["metadata"] = default_data["metadata"]
                     self._save_data(data)
                 return data
+        except json.JSONDecodeError as e:
+            print(f"⚠️ Erro ao carregar dados (JSON inválido): {e}")
+            self._create_backup("corrupted")
+            self._save_data(default_data)
+            return default_data
         except Exception as e:
             print(f"⚠️ Erro ao carregar dados: {e}")
             self._create_backup("corrupted")
@@ -60,6 +72,10 @@ class DataManager:
     def _save_data(self, data: Optional[dict] = None):
         """Salva os dados no arquivo JSON"""
         save_data = data if data is not None else self.data
+        
+        if not isinstance(save_data, dict):
+            raise ValueError("Dados devem ser um dicionário")
+        
         save_data["metadata"]["last_updated"] = datetime.now().isoformat()
         
         try:
@@ -82,82 +98,93 @@ class DataManager:
             return ""
 
     def backup_to_drive(self) -> Dict:
-    """Realiza backup completo para o Google Drive com tratamento robusto de erros"""
-    result = {
-        "success": False,
-        "file_id": None,
-        "file_url": None,
-        "timestamp": datetime.now().isoformat(),
-        "error": None
-    }
+        """Realiza backup completo para o Google Drive com tratamento robusto de erros"""
+        result = {
+            "success": False,
+            "file_id": None,
+            "file_url": None,
+            "timestamp": datetime.now().isoformat(),
+            "error": None
+        }
 
-    # Verificação preliminar
-    required_envs = ['GOOGLE_CREDENTIALS', 'DRIVE_FOLDER_ID', 'SHARED_DRIVE_ID']
-    missing = [env for env in required_envs if not os.getenv(env)]
-    
-    if missing:
-        result["error"] = f"Variáveis de ambiente faltando: {', '.join(missing)}"
-        return result
-
-    try:
-        # 1. Criar backup local
-        backup_path = self._create_backup("drive")
-        if not backup_path or not os.path.exists(backup_path):
-            result["error"] = "Falha ao criar ou localizar backup local"
+        # Verificação preliminar
+        if not self.data:
+            result["error"] = "Nenhum dado para backup"
             return result
 
-        # 2. Configurar serviço do Google Drive
-        if not os.path.exists("credentials.json"):
-            result["error"] = "Arquivo credentials.json não encontrado"
-            return result
-
-        creds = service_account.Credentials.from_service_account_file(
-            "credentials.json",
-            scopes=['https://www.googleapis.com/auth/drive.file']
-        )
+        required_envs = ['GOOGLE_CREDENTIALS', 'DRIVE_FOLDER_ID', 'SHARED_DRIVE_ID']
+        missing = [env for env in required_envs if not os.getenv(env)]
         
-        # 3. Upload com verificação de timeout
-        with build('drive', 'v3', credentials=creds) as service:
-            file_metadata = {
-                'name': os.path.basename(backup_path),
-                'parents': [os.getenv('DRIVE_FOLDER_ID')],
-                'supportsAllDrives': True,
-                'driveId': os.getenv('SHARED_DRIVE_ID')
-            }
-            
-            media = MediaFileUpload(
-                backup_path,
-                mimetype='application/json',
-                resumable=True
+        if missing:
+            result["error"] = f"Variáveis de ambiente faltando: {', '.join(missing)}"
+            return result
+
+        try:
+            # Verificar se credentials.json existe e é válido
+            if not os.path.exists("credentials.json"):
+                result["error"] = "Arquivo credentials.json não encontrado"
+                return result
+
+            with open("credentials.json", "r") as f:
+                json.load(f)  # Verifica se o JSON é válido
+
+            # 1. Criar backup local
+            backup_path = self._create_backup("drive")
+            if not backup_path or not os.path.exists(backup_path):
+                result["error"] = "Falha ao criar ou localizar backup local"
+                return result
+
+            # 2. Configurar serviço do Google Drive
+            creds = service_account.Credentials.from_service_account_file(
+                "credentials.json",
+                scopes=['https://www.googleapis.com/auth/drive.file']
             )
             
-            file = service.files().create(
-                body=file_metadata,
-                media_body=media,
-                fields='id,name,webViewLink',
-                supportsAllDrives=True
-            ).execute(timeout=300)  # Timeout de 5 minutos
+            # 3. Upload com verificação de timeout
+            with build('drive', 'v3', credentials=creds) as service:
+                file_metadata = {
+                    'name': os.path.basename(backup_path),
+                    'parents': [os.getenv('DRIVE_FOLDER_ID')],
+                    'supportsAllDrives': True,
+                    'driveId': os.getenv('SHARED_DRIVE_ID')
+                }
+                
+                media = MediaFileUpload(
+                    backup_path,
+                    mimetype='application/json',
+                    resumable=True
+                )
+                
+                file = service.files().create(
+                    body=file_metadata,
+                    media_body=media,
+                    fields='id,name,webViewLink',
+                    supportsAllDrives=True
+                ).execute(timeout=300)  # Timeout de 5 minutos
 
-            # 4. Atualizar status
-            self.data["metadata"]["last_backup"] = result["timestamp"]
-            self._save_data()
+                # 4. Atualizar status
+                self.data["metadata"]["last_backup"] = result["timestamp"]
+                self._save_data()
 
-            result.update({
-                "success": True,
-                "file_id": file['id'],
-                "file_url": file.get('webViewLink'),
-                "file_name": file['name']
-            })
+                result.update({
+                    "success": True,
+                    "file_id": file['id'],
+                    "file_url": file.get('webViewLink'),
+                    "file_name": file['name']
+                })
 
-    except HttpError as http_err:
-        err_details = http_err.error_details if hasattr(http_err, 'error_details') else str(http_err)
-        result["error"] = f"Erro HTTP {http_err.status_code}: {err_details}"
-    except TimeoutError:
-        result["error"] = "Timeout: operação excedeu 5 minutos"
-    except Exception as e:
-        result["error"] = f"Erro inesperado: {type(e).__name__}: {str(e)}"
+        except HttpError as http_err:
+            err_details = http_err.error_details if hasattr(http_err, 'error_details') else str(http_err)
+            result["error"] = f"Erro HTTP {http_err.status_code}: {err_details}"
+        except TimeoutError:
+            result["error"] = "Timeout: operação excedeu 5 minutos"
+        except json.JSONDecodeError as e:
+            result["error"] = f"Credenciais inválidas (JSON malformado): {e}"
+        except Exception as e:
+            result["error"] = f"Erro inesperado: {type(e).__name__}: {str(e)}"
 
-    return result
+        return result
+
     def get_guild_data(self, guild_id: int) -> Dict:
         guild_id_str = str(guild_id)
         if guild_id_str not in self.data["guilds"]:
@@ -179,25 +206,29 @@ class DataManager:
         platform: str,
         channel_id: str
     ) -> bool:
-        guild_data = self.get_guild_data(guild.id)
-        user_id_str = str(user.id)
-        
-        if user_id_str not in guild_data["users"]:
-            guild_data["users"][user_id_str] = {
-                "discord_info": {
-                    "name": user.name,
-                    "display_name": user.display_name,
-                    "avatar": str(user.avatar.url) if user.avatar else None
-                }
-            }
-        
-        guild_data["users"][user_id_str][platform] = channel_id.lower().strip()
-        self._save_data()
-        
-        if guild_data["config"]["backup_enabled"]:
-            self.backup_to_drive()
+        try:
+            guild_data = self.get_guild_data(guild.id)
+            user_id_str = str(user.id)
             
-        return True
+            if user_id_str not in guild_data["users"]:
+                guild_data["users"][user_id_str] = {
+                    "discord_info": {
+                        "name": user.name,
+                        "display_name": user.display_name,
+                        "avatar": str(user.avatar.url) if user.avatar else None
+                    }
+                }
+            
+            guild_data["users"][user_id_str][platform] = channel_id.lower().strip()
+            self._save_data()
+            
+            if guild_data["config"]["backup_enabled"]:
+                self.backup_to_drive()
+                
+            return True
+        except Exception as e:
+            print(f"⚠️ Erro ao vincular canal: {e}")
+            return False
 
     def remove_user_platform(
         self,
@@ -205,23 +236,31 @@ class DataManager:
         user_id: int,
         platform: str
     ) -> bool:
-        guild_data = self.get_guild_data(guild_id)
-        user_id_str = str(user_id)
-        
-        if user_id_str in guild_data["users"] and platform in guild_data["users"][user_id_str]:
-            del guild_data["users"][user_id_str][platform]
+        try:
+            guild_data = self.get_guild_data(guild_id)
+            user_id_str = str(user_id)
             
-            if not guild_data["users"][user_id_str].get("twitch") and not guild_data["users"][user_id_str].get("youtube"):
-                del guild_data["users"][user_id_str]
-            
-            self._save_data()
-            return True
-        return False
+            if user_id_str in guild_data["users"] and platform in guild_data["users"][user_id_str]:
+                del guild_data["users"][user_id_str][platform]
+                
+                if not guild_data["users"][user_id_str].get("twitch") and not guild_data["users"][user_id_str].get("youtube"):
+                    del guild_data["users"][user_id_str]
+                
+                self._save_data()
+                return True
+            return False
+        except KeyError as e:
+            print(f"⚠️ Erro ao remover plataforma: {e}")
+            return False
 
     def get_user_platforms(self, guild_id: int, user_id: int) -> Dict:
-        guild_data = self.get_guild_data(guild_id)
-        user_data = guild_data["users"].get(str(user_id), {})
-        return {
-            "twitch": user_data.get("twitch"),
-            "youtube": user_data.get("youtube")
-        }
+        try:
+            guild_data = self.get_guild_data(guild_id)
+            user_data = guild_data["users"].get(str(user_id), {})
+            return {
+                "twitch": user_data.get("twitch"),
+                "youtube": user_data.get("youtube")
+            }
+        except Exception as e:
+            print(f"⚠️ Erro ao obter plataformas: {e}")
+            return {"twitch": None, "youtube": None}
