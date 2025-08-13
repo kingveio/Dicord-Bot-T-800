@@ -4,6 +4,7 @@ import aiofiles
 import logging
 from pathlib import Path
 from datetime import datetime
+from typing import Dict, Any
 import os
 
 logger = logging.getLogger(__name__)
@@ -12,68 +13,98 @@ class DataManager:
     def __init__(self):
         self.data_dir = Path("data")
         self.filepath = self.data_dir / "streamers.json"
-        self._data = None
+        self._data: Dict[str, Any] = {
+            "version": "1.0",
+            "created_at": datetime.now().isoformat(),
+            "guilds": {}
+        }
         self._lock = asyncio.Lock()
 
-    async def load(self):
-        """Carrega dados com fallback: Drive -> Local -> Novo"""
+    async def load(self) -> None:
+        """Carrega dados do arquivo local ou cria nova estrutura"""
         async with self._lock:
             # Garante que o diretório existe
             self.data_dir.mkdir(exist_ok=True)
             
-            # Tenta carregar localmente
-            if await self._load_local():
-                return
-                
-            # Se não existir local, cria novo
-            self._data = {
-                "version": "1.0",
-                "created_at": datetime.now().isoformat(),
-                "guilds": {}
-            }
-            await self.save()
+            try:
+                if self.filepath.exists():
+                    async with aiofiles.open(self.filepath, "r", encoding="utf-8") as f:
+                        loaded_data = json.loads(await f.read())
+                        if self._validate_data(loaded_data):
+                            self._data = loaded_data
+                            logger.info("Dados carregados do arquivo local")
+                        else:
+                            logger.warning("Dados locais inválidos, usando estrutura padrão")
+            except Exception as e:
+                logger.error(f"Erro ao carregar dados: {e}")
+                # Mantém a estrutura padrão se houver erro
 
-    async def _load_local(self) -> bool:
-        """Tenta carregar do arquivo local"""
-        try:
-            if not self.filepath.exists():
-                return False
-                
-            async with aiofiles.open(self.filepath, "r") as f:
-                self._data = json.loads(await f.read())
-                logger.info("Dados carregados localmente")
-                return True
-        except Exception as e:
-            logger.error(f"Erro ao carregar dados locais: {e}")
-            return False
+    def _validate_data(self, data: Dict[str, Any]) -> bool:
+        """Valida a estrutura básica dos dados carregados"""
+        return all(key in data for key in ["version", "created_at", "guilds"])
 
-    async def save(self):
+    async def save(self) -> None:
         """Salva os dados localmente"""
         async with self._lock:
             try:
-                async with aiofiles.open(self.filepath, "w") as f:
-                    await f.write(json.dumps(self._data, indent=2))
-                logger.info("Dados salvos localmente")
+                self._data["last_updated"] = datetime.now().isoformat()
+                async with aiofiles.open(self.filepath, "w", encoding="utf-8") as f:
+                    await f.write(json.dumps(self._data, indent=2, ensure_ascii=False))
+                logger.info("Dados salvos com sucesso")
             except Exception as e:
-                logger.error(f"Erro ao salvar dados: {e}")
+                logger.error(f"Falha ao salvar dados: {e}")
                 raise
 
-    def get_guild(self, guild_id: int):
-        """Obtém dados da guilda (não assíncrono)"""
+    def get_guild(self, guild_id: int) -> Dict[str, Any]:
+        """Obtém ou cria dados de uma guilda"""
         guild_id_str = str(guild_id)
         if guild_id_str not in self._data["guilds"]:
             self._data["guilds"][guild_id_str] = {
                 "config": {
                     "live_role_id": None,
-                    "notify_channel_id": None
+                    "notify_channel_id": None,
+                    "backup_enabled": True
                 },
                 "users": {},
                 "created_at": datetime.now().isoformat()
             }
         return self._data["guilds"][guild_id_str]
 
-    async def update_guild(self, guild_id: int, data: dict):
-        """Atualiza dados da guilda"""
-        async with self._lock:
-            self._data["guilds"][str(guild_id)] = data
+    async def update_guild_config(self, guild_id: int, **kwargs) -> None:
+        """Atualiza configurações específicas da guilda"""
+        guild_data = self.get_guild(guild_id)
+        for key, value in kwargs.items():
+            if key in guild_data["config"]:
+                guild_data["config"][key] = value
+        await self.save()
+
+    async def link_user_platform(self, guild_id: int, user_id: int, platform: str, username: str) -> bool:
+        """Vincula uma plataforma a um usuário"""
+        try:
+            guild_data = self.get_guild(guild_id)
+            user_id_str = str(user_id)
+            
+            if user_id_str not in guild_data["users"]:
+                guild_data["users"][user_id_str] = {}
+            
+            guild_data["users"][user_id_str][platform] = {
+                "username": username,
+                "linked_at": datetime.now().isoformat()
+            }
+            
             await self.save()
+            return True
+        except Exception as e:
+            logger.error(f"Erro ao vincular plataforma: {e}")
+            return False
+
+    async def cleanup_inactive_guilds(self, active_guild_ids: list) -> int:
+        """Remove guildas inativas e retorna o número de removidas"""
+        inactive = [gid for gid in self._data["guilds"] if int(gid) not in active_guild_ids]
+        for gid in inactive:
+            del self._data["guilds"][gid]
+        
+        if inactive:
+            await self.save()
+        
+        return len(inactive)
