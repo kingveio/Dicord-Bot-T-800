@@ -3,7 +3,6 @@ import os
 
 class DataManager:
     def __init__(self, filepath="data/data.json"):
-        # Cria o diretório se não existir
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
         self.filepath = filepath
         self.data = self._load_data()
@@ -43,5 +42,15 @@ class DataManager:
             guild_data["users"][user_id_str]["twitch"] = twitch_name
         if youtube_name:
             guild_data["users"][user_id_str]["youtube"] = youtube_name
-            
         self._save_data()
+
+    def remove_user_platform(self, guild_id: int, user_id: int, platform: str) -> bool:
+        """Remove uma plataforma específica do usuário"""
+        guild_data = self.get_guild_data(guild_id)
+        user_id_str = str(user_id)
+        
+        if user_id_str in guild_data["users"] and platform in guild_data["users"][user_id_str]:
+            del guild_data["users"][user_id_str][platform]
+            self._save_data()
+            return True
+        return False
