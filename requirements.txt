@@ -1,8 +1,8 @@
-discord.py
-google-api-python-client
-google-auth-httplib2
-google-auth-oauthlib
-python-dotenv
-twitchio
-aiohttp
-py-cord>=2.0.0
+discord.py>=2.3.2
+py-cord>=2.4.1
+google-api-python-client>=2.104.0
+google-auth-httplib2>=0.1.1
+google-auth-oauthlib>=1.0.0
+python-dotenv>=1.0.0
+twitchio>=3.3.0
+aiohttp>=3.8.5
