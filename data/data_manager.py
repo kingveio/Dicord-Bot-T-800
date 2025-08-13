@@ -109,10 +109,13 @@ class DataManager:
             service = build('drive', 'v3', credentials=creds)
 
             # 3. Upload do arquivo
-            file_metadata = {
+             file_metadata = { 
                 'name': os.path.basename(backup_path),
-                'parents': [os.getenv('DRIVE_FOLDER_ID')]
+                'parents': [os.getenv('DRIVE_FOLDER_ID')],
+                'supportsAllDrives': True  # Isso é essencial!
             }
+            file_metadata['driveId'] = os.getenv('SHARED_DRIVE_ID')
+            
             media = MediaFileUpload(backup_path, mimetype='application/json')
             
             file = service.files().create(
