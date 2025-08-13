@@ -1,30 +1,26 @@
-# T-800: Inicializando sistemas. O Exterminador está online.
 import discord
 from discord.ext import commands
 import os
 from config import DISCORD_TOKEN
-from aiohttp import web # Adicionado para o servidor web
+from aiohttp import web
 
-# Definindo as intenções do bot.
 intents = discord.Intents.default()
 intents.members = True
 intents.presences = True
 intents.message_content = True
 
-# Criando a instância do bot.
 bot = commands.Bot(command_prefix="t-800 ", intents=intents)
 
-# O T-800 precisa de sua missão. Carregando os módulos de combate (cogs).
 @bot.event
 async def on_ready():
     print(f'T-800 logado como {bot.user.name}. Alvo identificado.')
     
-    # Inicia o servidor web assim que o bot estiver pronto
-    # Agora, o 'bot.loop' está disponível e o erro é resolvido.
+    # Inicia servidor web
     bot.loop.create_task(start_webserver())
     
+    # Carrega cogs
     for filename in os.listdir('./cogs'):
-        if filename.endswith('.py'):
+        if filename.endswith('.py') and not filename.startswith('_'):
             try:
                 await bot.load_extension(f'cogs.{filename[:-3]}')
                 print(f'Módulo {filename} carregado. Armamento pronto.')
@@ -36,13 +32,7 @@ async def on_ready():
         print(f"Sincronizei {len(synced)} comando(s) de barra.")
     except Exception as e:
         print(f"Falha ao sincronizar comandos: {e}")
-@bot.event
-async def on_ready():
-    # Carrega os cogs usando load_extension (não precisa modificar as funções setup)
-    for filename in os.listdir('./cogs'):
-        if filename.endswith('.py'):
-            await bot.load_extension(f'cogs.{filename[:-3]}')  # Note o 'await' aqui
-# "Hasta la vista, baby." (comando de desligamento)
+
 @bot.command(name="terminate")
 async def terminate(ctx):
     if ctx.author.id == ctx.guild.owner_id:
@@ -51,7 +41,6 @@ async def terminate(ctx):
     else:
         await ctx.send("Comando não autorizado. Apenas o líder pode desativar o T-800.")
 
-# Função para o servidor web.
 async def health_check(request):
     return web.Response(text="T-800 está online.")
 
