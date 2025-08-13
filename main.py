@@ -5,7 +5,10 @@ import discord
 from discord.ext import commands
 from config import Config
 from utils.logging import setup_logging
-from data.data_manager import DataManager  # Adicione esta linha
+from data.data_manager import DataManager
+from services.discord_service import DiscordService
+from services.twitch_api import TwitchAPI
+from services.youtube_api import YouTubeAPI
 
 logger = logging.getLogger(__name__)
 
@@ -16,25 +19,32 @@ class Bot(commands.Bot):
         intents.message_content = True
         
         super().__init__(
-            command_prefix="!",
+            command_prefix="!",  # Prefixo não usado com comandos slash
             intents=intents,
             help_command=None
         )
         
-        # Inicializa o DataManager
+        # Inicializa todos os serviços
         self.data_manager = DataManager()
+        self.discord_service = DiscordService(self)
+        self.twitch_api = TwitchAPI()
+        self.youtube_api = YouTubeAPI()
         self.keep_alive_task = None
 
     async def setup_hook(self):
-        """Configura tarefas de fundo quando o bot está inicializando"""
-        # Carrega os cogs primeiro
-        await self.load_cogs()
-        
-        # Inicializa o DataManager
-        await self.data_manager.load()
-        
-        # Inicia a tarefa keep-alive
-        self.keep_alive_task = asyncio.create_task(self.keep_alive())
+        """Configuração assíncrona durante a inicialização"""
+        try:
+            # 1. Carrega os dados primeiro
+            await self.data_manager.load()
+            
+            # 2. Carrega todos os cogs
+            await self.load_cogs()
+            
+            # 3. Inicia a tarefa keep-alive
+            self.keep_alive_task = asyncio.create_task(self.keep_alive())
+        except Exception as e:
+            logger.critical(f"Erro no setup_hook: {e}", exc_info=True)
+            raise
 
     async def load_cogs(self):
         """Carrega todos os cogs automaticamente"""
@@ -60,13 +70,15 @@ class Bot(commands.Bot):
             try:
                 async with ClientSession() as session:
                     async with session.get("https://your-bot-name.onrender.com") as resp:
-                        logger.info(f"♻ Keep-alive: Status {resp.status}")
+                        if resp.status != 200:
+                            logger.warning(f"Keep-alive status: {resp.status}")
             except Exception as e:
                 logger.error(f"⚠️ Keep-alive falhou: {e}")
             await asyncio.sleep(300)  # Ping a cada 5 minutos
 
     async def close(self):
         """Limpeza quando o bot está desligando"""
+        # Cancela a tarefa keep-alive
         if self.keep_alive_task:
             self.keep_alive_task.cancel()
             try:
