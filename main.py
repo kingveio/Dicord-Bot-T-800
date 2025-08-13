@@ -5,6 +5,7 @@ import discord
 from discord.ext import commands
 from config import Config
 from utils.logging import setup_logging
+from services import DiscordService, GoogleDriveService, TwitchAPI, YouTubeAPI
 
 # Configuração básica de logging
 logger = logging.getLogger(__name__)
