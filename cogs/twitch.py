@@ -1,3 +1,4 @@
+# cogs/twitch.py
 import discord
 from discord.ext import commands
 from data.data_manager import DataManager
