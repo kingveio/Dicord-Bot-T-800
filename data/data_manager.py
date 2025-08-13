@@ -20,21 +20,23 @@ class DataManager:
         self._setup_google_drive()
         self.data = self._load_or_initialize_data()
 
-    def _setup_google_drive(self):
-        """Configura as credenciais do Google Drive"""
-        try:
-            creds_base64 = os.getenv('GOOGLE_CREDENTIALS')
-            if creds_base64:
-                try:
-                    decoded = base64.b64decode(creds_base64)
-                    with open("credentials.json", "wb") as f:
-                        f.write(decoded)
-                except (binascii.Error, ValueError) as e:
-                    print(f"⚠️ Credenciais do Google Drive inválidas (erro Base64): {e}")
-                    return None
-        except Exception as e:
-            print(f"⚠️ Erro ao configurar Google Drive: {e}")
-            return None
+ from google_auth_oauthlib.flow import InstalledAppFlow
+
+def _setup_google_drive(self):
+    """Configura OAuth 2.0 para Google Drive"""
+    SCOPES = ['https://www.googleapis.com/auth/drive.file']
+    
+    try:
+        flow = InstalledAppFlow.from_client_secrets_file(
+            'credentials.json', SCOPES)
+        creds = flow.run_local_server(port=0)
+        
+        with open('token.json', 'w') as token:
+            token.write(creds.to_json())
+            
+    except Exception as e:
+        print(f"⚠️ Erro ao configurar OAuth: {e}")
+        return None
 
     def _load_or_initialize_data(self) -> Dict:
         """Carrega ou cria o arquivo de dados com estrutura padrão"""
