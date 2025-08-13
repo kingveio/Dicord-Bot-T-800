@@ -42,7 +42,17 @@ async def on_ready():
             
     except Exception as e:
         print(f"❌ Erro ao sincronizar comandos: {type(e).__name__}: {e}")
-
+        
+@bot.event
+async def on_command_error(ctx, error):
+    if isinstance(error, commands.CommandNotFound):
+        await ctx.send("❌ Comando não encontrado. Use `t-800 help` para ver os comandos.")
+    elif isinstance(error, commands.MissingPermissions):
+        await ctx.send("🚫 Você não tem permissão para executar este comando!")
+    else:
+        await ctx.send(f"⚠️ Erro: {str(error)}")
+        raise error
+        
 @bot.command(name="sync", hidden=True)
 @commands.is_owner()
 async def sync(ctx: commands.Context):
