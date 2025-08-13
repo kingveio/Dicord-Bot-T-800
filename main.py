@@ -1,3 +1,4 @@
+import os
 import asyncio
 import logging
 from aiohttp import web, ClientSession, ClientTimeout, ClientError
@@ -14,24 +15,31 @@ logger = logging.getLogger(__name__)
 class HealthServer:
     def __init__(self):
         self.app = web.Application()
-        self.app.add_routes([web.get('/health', self.health_check)])
+        self.app.add_routes([
+            web.get('/health', self.health_check),
+            web.get('/', self.health_check)  # Rota adicional para verificação manual
+        ])
         self.runner = web.AppRunner(self.app)
         self.site = None
+        self.port = int(os.getenv('PORT', '10000'))  # Porta automática
 
     async def health_check(self, request):
-        return web.Response(text="Bot is running")
+        return web.Response(
+            text=f"Discord Bot is running (Port: {self.port})",
+            content_type='text/plain'
+        )
 
     async def start(self):
         await self.runner.setup()
-        self.site = web.TCPSite(self.runner, '0.0.0.0', 10000)
+        self.site = web.TCPSite(self.runner, '0.0.0.0', self.port)
         await self.site.start()
-        logger.info("Health check server started on port 10000")
+        logger.info(f"✅ Health check server running on port {self.port}")
 
     async def stop(self):
         if self.site:
             await self.site.stop()
         await self.runner.cleanup()
-        logger.info("Health check server stopped")
+        logger.info("🛑 Health server stopped")
 
 class Bot(commands.Bot):
     def __init__(self):
@@ -53,28 +61,32 @@ class Bot(commands.Bot):
         self.keep_alive_task = None
 
     async def setup_hook(self):
-        """Async setup during bot initialization"""
+        """Configuração inicial assíncrona"""
         try:
-            # Start health check server
+            # 1. Inicia servidor de health check
             await self.health_server.start()
             
-            # Initialize aiohttp session
-            self.session = ClientSession(timeout=ClientTimeout(total=10))
+            # 2. Configura sessão HTTP
+            self.session = ClientSession(
+                timeout=ClientTimeout(total=10),
+                headers={'User-Agent': 'DiscordBot/1.0'}
+            )
             
-            # Load data and cogs
+            # 3. Carrega dados e extensões
             await self.data_manager.load()
             await self.load_cogs()
             
-            # Start keep-alive if on Render
+            # 4. Keep-alive apenas no Render
             if Config.is_render():
                 self.keep_alive_task = asyncio.create_task(self.keep_alive())
-                
+                logger.info("🔵 Render environment detected")
+            
         except Exception as e:
-            logger.critical(f"Error in setup_hook: {e}", exc_info=True)
+            logger.critical(f"🚨 Setup hook failed: {e}", exc_info=True)
             raise
 
     async def load_cogs(self):
-        """Load all cogs automatically"""
+        """Carrega todas as extensões do bot"""
         cogs = [
             "cogs.live_monitor",
             "cogs.settings",
@@ -85,28 +97,29 @@ class Bot(commands.Bot):
         for cog in cogs:
             try:
                 await self.load_extension(cog)
-                logger.info(f"✅ Cog loaded: {cog}")
+                logger.info(f"🔌 Cog loaded: {cog}")
             except Exception as e:
-                logger.error(f"❌ Failed to load cog {cog}: {e}")
+                logger.error(f"❌ Failed to load {cog}: {e}")
 
     async def keep_alive(self):
-        """Keep the bot alive on Render"""
+        """Mantém o serviço ativo no Render"""
         await self.wait_until_ready()
+        service_url = f"https://{Config.RENDER_SERVICE_NAME}.onrender.com"
         
         while not self.is_closed():
             try:
-                async with self.session.get(f"https://{Config.RENDER_SERVICE_NAME}.onrender.com/health") as resp:
-                    if resp.status != 200:
-                        logger.warning(f"Keep-alive status: {resp.status}")
-            except ClientError as e:
-                logger.error(f"⚠️ Keep-alive failed: {e}")
-            await asyncio.sleep(300)  # Ping every 5 minutes
+                async with self.session.get(f"{service_url}/health") as resp:
+                    status = "✅" if resp.status == 200 else "⚠️"
+                    logger.debug(f"{status} Keep-alive ping: {resp.status}")
+            except Exception as e:
+                logger.warning(f"⚠️ Keep-alive failed: {e}")
+            await asyncio.sleep(300)  # 5 minutos
 
     async def close(self):
-        """Cleanup when bot is shutting down"""
-        logger.info("Shutting down bot...")
+        """Limpeza ao desligar o bot"""
+        logger.info("🛑 Shutting down bot...")
         
-        # Cancel keep-alive task
+        # 1. Cancela tarefa de keep-alive
         if self.keep_alive_task:
             self.keep_alive_task.cancel()
             try:
@@ -114,34 +127,35 @@ class Bot(commands.Bot):
             except asyncio.CancelledError:
                 pass
         
-        # Close health server
+        # 2. Para o servidor de health check
         await self.health_server.stop()
         
-        # Close aiohttp session
+        # 3. Fecha sessão HTTP
         if self.session and not self.session.closed:
             await self.session.close()
         
-        # Close discord connection
+        # 4. Fecha conexão com Discord
         await super().close()
+        logger.info("👋 Bot shutdown complete")
 
 async def main():
     try:
-        # Initial setup
+        # Configuração inicial
         Config.validate()
         setup_logging(Config.LOG_LEVEL)
         
-        # Initialize and start bot
+        # Inicializa e inicia o bot
         bot = Bot()
         await bot.start(Config.DISCORD_TOKEN)
         
     except Exception as e:
-        logger.critical(f"💥 Fatal error: {e}", exc_info=True)
+        logger.critical(f"💥 FATAL ERROR: {e}", exc_info=True)
         raise
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("👋 Bot shutdown by user")
+        logger.info("🛑 Bot stopped by user")
     except Exception as e:
-        logger.critical(f"💥 Unhandled failure: {e}", exc_info=True)
+        logger.critical(f"💥 UNHANDLED EXCEPTION: {e}", exc_info=True)
