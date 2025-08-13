@@ -1,7 +1,7 @@
 import re
 import discord
 from datetime import timedelta
-from typing import Optional, Union, Tuple
+from typing import Optional, Union, Tuple, List  # Adicionando List aqui
 
 async def send_embed(
     destination: Union[discord.abc.Messageable, discord.Interaction],
