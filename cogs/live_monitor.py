@@ -31,7 +31,11 @@ class LiveMonitor(commands.Cog):
                 self.live_role = guild.get_role(guild_data["live_role_id"])
                 if not self.live_role:
                     continue
-                
+                except Exception as e:
+                logger.error(f"Erro no check_live: {e}", exc_info=True)
+                # Reinicia a tarefa após 5 minutos se falhar
+                await asyncio.sleep(300)
+                self.check_live.restart()
                 # Verifica todas as plataformas
                 live_status = {}
                 for platform, data in user_data["platforms"].items():
