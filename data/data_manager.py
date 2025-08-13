@@ -100,91 +100,61 @@ def _setup_google_drive(self):
             return ""
 
     def backup_to_drive(self) -> Dict:
-        """Realiza backup completo para o Google Drive com tratamento robusto de erros"""
-        result = {
-            "success": False,
-            "file_id": None,
-            "file_url": None,
-            "timestamp": datetime.now().isoformat(),
-            "error": None
-        }
+    """Realiza backup para Google Drive usando Shared Drive"""
+    result = {
+        "success": False,
+        "file_id": None,
+        "file_url": None,
+        "timestamp": datetime.now().isoformat(),
+        "error": None
+    }
 
-        # Verificação preliminar
-        if not self.data:
-            result["error"] = "Nenhum dado para backup"
-            return result
-
-        required_envs = ['GOOGLE_CREDENTIALS', 'DRIVE_FOLDER_ID', 'SHARED_DRIVE_ID']
-        missing = [env for env in required_envs if not os.getenv(env)]
-        
-        if missing:
-            result["error"] = f"Variáveis de ambiente faltando: {', '.join(missing)}"
-            return result
-
-        try:
-            # Verificar se credentials.json existe e é válido
-            if not os.path.exists("credentials.json"):
-                result["error"] = "Arquivo credentials.json não encontrado"
-                return result
-
-            with open("credentials.json", "r") as f:
-                json.load(f)  # Verifica se o JSON é válido
-
-            # 1. Criar backup local
-            backup_path = self._create_backup("drive")
-            if not backup_path or not os.path.exists(backup_path):
-                result["error"] = "Falha ao criar ou localizar backup local"
-                return result
-
-            # 2. Configurar serviço do Google Drive
-            creds = service_account.Credentials.from_service_account_file(
-                "credentials.json",
-                scopes=['https://www.googleapis.com/auth/drive.file']
-            )
-            
-            # 3. Upload sem timeout (compatível com versões mais antigas)
-            with build('drive', 'v3', credentials=creds) as service:
-                file_metadata = {
-                    'name': os.path.basename(backup_path),
-                    'parents': [os.getenv('DRIVE_FOLDER_ID')],
-                    'supportsAllDrives': True,
-                    'driveId': os.getenv('SHARED_DRIVE_ID')
-                }
-                
-                media = MediaFileUpload(
-                    backup_path,
-                    mimetype='application/json',
-                    resumable=True
-                )
-                
-                # Versão modificada sem parâmetro timeout
-                file = service.files().create(
-                    body=file_metadata,
-                    media_body=media,
-                    fields='id,name,webViewLink',
-                    supportsAllDrives=True
-                ).execute()
-
-                # 4. Atualizar status
-                self.data["metadata"]["last_backup"] = result["timestamp"]
-                self._save_data()
-
-                result.update({
-                    "success": True,
-                    "file_id": file['id'],
-                    "file_url": file.get('webViewLink'),
-                    "file_name": file['name']
-                })
-
-        except HttpError as http_err:
-            err_details = http_err.error_details if hasattr(http_err, 'error_details') else str(http_err)
-            result["error"] = f"Erro HTTP {http_err.status_code}: {err_details}"
-        except json.JSONDecodeError as e:
-            result["error"] = f"Credenciais inválidas (JSON malformado): {e}"
-        except Exception as e:
-            result["error"] = f"Erro inesperado: {type(e).__name__}: {str(e)}"
-
+    # Verificações iniciais
+    if not os.getenv('DRIVE_FOLDER_ID'):
+        result["error"] = "ID da pasta não configurado"
         return result
+
+    try:
+        # 1. Criar backup local
+        backup_path = self._create_backup("drive")
+        if not backup_path:
+            result["error"] = "Falha ao criar backup local"
+            return result
+
+        # 2. Configurar serviço
+        creds = service_account.Credentials.from_service_account_file(
+            "credentials.json",
+            scopes=['https://www.googleapis.com/auth/drive']
+        )
+        
+        # 3. Upload para Shared Drive
+        with build('drive', 'v3', credentials=creds) as service:
+            file_metadata = {
+                'name': os.path.basename(backup_path),
+                'parents': [os.getenv('DRIVE_FOLDER_ID')]
+            }
+            
+            media = MediaFileUpload(backup_path, mimetype='application/json')
+            
+            file = service.files().create(
+                body=file_metadata,
+                media_body=media,
+                supportsAllDrives=True,
+                fields='id,webViewLink'
+            ).execute()
+
+            result.update({
+                "success": True,
+                "file_id": file['id'],
+                "file_url": file.get('webViewLink')
+            })
+
+    except HttpError as e:
+        result["error"] = f"Erro HTTP {e.status_code}: {e.error_details}"
+    except Exception as e:
+        result["error"] = f"Erro inesperado: {str(e)}"
+
+    return result
 
     def get_guild_data(self, guild_id: int) -> Dict:
         guild_id_str = str(guild_id)
