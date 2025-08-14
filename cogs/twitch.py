@@ -9,32 +9,35 @@ class TwitchCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="adicionar_twitch", description="Vincula uma conta Twitch a um usuário")
-    @app_commands.describe(
-        usuario="Usuário do Discord para adicionar",
-        nome_twitch="Nome de usuário na Twitch"
-    )
-    async def vincular_twitch(self, interaction: discord.Interaction, usuario: discord.Member, nome_twitch: str):
-        """Implementação do comando de vincular Twitch"""
+    @app_commands.command(name="adicionar_twitch", description="Adiciona um canal da Twitch para ser monitorado")
+    @app_commands.describe(username="O nome de usuário da Twitch")
+    async def vincular_twitch(self, interaction: discord.Interaction, username: str):
+        """Adiciona um canal da Twitch a um usuário"""
+        await interaction.response.send_message(f"Verificando o canal '{username}' na Twitch...", ephemeral=True)
+        
         try:
+            channel_id = await self.bot.twitch_api.get_channel_id(username)
+            if not channel_id:
+                return await interaction.followup.send(f"❌ Não foi possível encontrar o canal **{username}** na Twitch. Verifique o nome de usuário.")
+            
+            # Chama a função do DataManager para vincular o usuário e a plataforma
             success = await self.bot.data_manager.link_user_platform(
-                interaction.guild.id,
-                usuario.id,
-                "twitch",
-                nome_twitch.lower().strip()
+                interaction.guild_id, interaction.user.id, "twitch", username
             )
             
-            await interaction.response.send_message(
-                f"✅ Conta Twitch `{nome_twitch}` vinculada a {usuario.mention}" if success 
-                else "❌ Falha ao vincular conta",
-                ephemeral=True
-            )
+            if success:
+                embed = discord.Embed(
+                    title="Twitch adicionado com sucesso!",
+                    description=f"O canal **{username}** agora está vinculado a sua conta no servidor. Você receberá notificações quando ele entrar em live.",
+                    color=discord.Color.purple()
+                )
+                await interaction.followup.send(embed=embed)
+            else:
+                await interaction.followup.send(f"❌ Ocorreu um erro ao vincular seu canal.")
+                
         except Exception as e:
             logger.error(f"Erro no comando twitch: {e}", exc_info=True)
-            await interaction.response.send_message(
-                "❌ Ocorreu um erro ao processar sua solicitação",
-                ephemeral=True
-            )
+            await interaction.followup.send(f"❌ Ocorreu um erro inesperado: {e}")
 
 async def setup(bot):
     await bot.add_cog(TwitchCommands(bot))
