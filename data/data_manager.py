@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 import os
 
-from google_drive import GoogleDriveService # Importação corrigida para o mesmo diretório
+from ..google_drive import GoogleDriveService # Importação corrigida para o diretório pai
 
 logger = logging.getLogger(__name__)
 
