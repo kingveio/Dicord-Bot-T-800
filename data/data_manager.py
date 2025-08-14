@@ -6,7 +6,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Optional
 import os
-from ..services.google_drive_service import GoogleDriveService
+from services.google_drive_service import GoogleDriveService
 
 logger = logging.getLogger(__name__)
 
