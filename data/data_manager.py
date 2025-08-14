@@ -7,13 +7,13 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 import os
 
-from ..google_drive import GoogleDriveService # Importação corrigida
+from google_drive import GoogleDriveService # Importação corrigida para o mesmo diretório
 
 logger = logging.getLogger(__name__)
 
 class DataManager:
     def __init__(self):
-        self.bot = None  # Será definido pelo bot
+        self.bot = None
         self.data_dir = Path("data")
         self.filepath = self.data_dir / "streamers.json"
         self._data: Dict[str, Any] = {
