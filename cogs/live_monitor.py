@@ -29,7 +29,7 @@ class LiveMonitor(commands.Cog):
                 guild_data = self.bot.data_manager.get_guild(guild.id)
                 
                 # Acessa os atributos do objeto config, não do dicionário
-                live_role_id = guild_data.config.live_role_id
+                live_role_id = guild_data['config']['live_role_id']
                 notify_channel_id = guild_data.config.notify_channel_id
                 
                 if not live_role_id or not notify_channel_id:
