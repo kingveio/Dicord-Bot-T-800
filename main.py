@@ -18,6 +18,8 @@ from cogs.twitch import TwitchCommands
 from cogs.youtube import YouTubeCommands
 from cogs.settings import Settings
 from services.google_drive_service import GoogleDriveService
+from services.twitch_api import TwitchAPI
+from services.youtube_api import YouTubeAPI
 
 load_dotenv()
 Config.validate()
@@ -61,6 +63,10 @@ class DiscordBot(commands.Bot):
         logger.info(f"✅ Comandos slash sincronizados ({len(synced)} comando(s))")
 
     async def setup_hook(self):
+        # Inicializa as APIs
+        self.twitch_api = TwitchAPI(session=self.session)
+        self.youtube_api = YouTubeAPI(session=self.session)
+
         # Passa o bot para o DataManager e inicializa
         await self.data_manager.init_services(self)
 
@@ -75,16 +81,14 @@ class DiscordBot(commands.Bot):
         await super().close()
         await self.session.close()
 
-# Função para criar e rodar o servidor web
+# Função para criar e rodar o servidor web para o Render
 async def web_server():
     async def handler(request):
-        # Este handler responderá tanto a "/" quanto a "/health"
+        # Responde à rota principal e à rota de health check
         return web.Response(text="Bot está online!")
 
     app = web.Application()
-    # Adiciona a rota principal
     app.router.add_get("/", handler)
-    # Adiciona a rota de health check para o Render
     app.router.add_get("/health", handler)
     
     port = int(os.getenv("PORT", 8080))
@@ -97,13 +101,14 @@ async def web_server():
 async def main_loop():
     bot = DiscordBot()
     
+    # Inicializa o serviço do Google Drive e passa para o DataManager
     if os.getenv('GOOGLE_CREDENTIALS'):
         bot.google_drive_service = GoogleDriveService()
         bot.data_manager.google_drive_service = bot.google_drive_service
         
     await bot.start(Config.DISCORD_TOKEN)
 
-# A nova função `start_server` executa o bot e o servidor web juntos
+# A função start_server executa o bot e o servidor web de forma concorrente
 async def start_server():
     server_task = asyncio.create_task(web_server())
     bot_task = asyncio.create_task(main_loop())
@@ -112,4 +117,7 @@ async def start_server():
 
 # Iniciar o bot
 if __name__ == "__main__":
-    asyncio.run(start_server())
+    try:
+        asyncio.run(start_server())
+    except KeyboardInterrupt:
+        logger.info("Encerrando bot...")
