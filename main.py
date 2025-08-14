@@ -16,7 +16,7 @@ from cogs.live_monitor import LiveMonitor
 from cogs.twitch import TwitchCommands
 from cogs.youtube import YouTubeCommands
 from cogs.settings import Settings
-from services.google_drive import GoogleDriveService
+from services.google_drive_service import GoogleDriveService
 
 load_dotenv()
 Config.validate()
