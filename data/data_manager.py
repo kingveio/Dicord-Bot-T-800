@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 import os
 
-from services.google_drive import GoogleDriveService # Importando o serviço
+from ..google_drive import GoogleDriveService # Importação corrigida
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ class DataManager:
             "guilds": {}
         }
         self._lock = asyncio.Lock()
-        self.google_drive_service: Optional[GoogleDriveService] = None # Novo atributo
+        self.google_drive_service: Optional[GoogleDriveService] = None
 
     async def init_services(self, bot):
         """Inicializa serviços que dependem do bot"""
@@ -40,13 +40,11 @@ class DataManager:
         async with self._lock:
             self.data_dir.mkdir(exist_ok=True)
             
-            # Prioriza o download do Drive se o serviço estiver ativo
             if self.google_drive_service and self.google_drive_service.service:
                 logger.info("Tentando carregar dados do Google Drive...")
                 success, msg = await self.google_drive_service.download_file(self.filepath.name, self.filepath)
                 if success:
                     logger.info(f"Dados baixados do Google Drive: {msg}")
-                    # Procede para carregar do arquivo local (o que acabou de ser baixado)
                 else:
                     logger.warning(f"Falha ao baixar do Drive: {msg}. Carregando do arquivo local, se existir.")
 
@@ -68,12 +66,10 @@ class DataManager:
         """Salva dados no arquivo local e faz backup no Google Drive"""
         async with self._lock:
             try:
-                # Salva localmente
                 async with aiofiles.open(self.filepath, "w", encoding="utf-8") as f:
                     await f.write(json.dumps(self._data, indent=4))
                 logger.info("Dados salvos localmente.")
 
-                # Faz backup no Google Drive se o serviço estiver ativo
                 if self.google_drive_service and self.google_drive_service.service:
                     success, msg = await self.google_drive_service.upload_file(self.filepath)
                     if success:
@@ -84,7 +80,6 @@ class DataManager:
             except Exception as e:
                 logger.error(f"Erro ao salvar dados: {e}")
 
-    # ... (outros métodos permanecem os mesmos) ...
     def _validate_data(self, data: Dict) -> bool:
         return "guilds" in data and "version" in data
 
@@ -121,11 +116,11 @@ class DataManager:
         if platform:
             if platform in guild_data["users"][user_id_str]:
                 del guild_data["users"][user_id_str][platform]
-                if not guild_data["users"][user_id_str]: # Remove user if no platforms left
+                if not guild_data["users"][user_id_str]:
                     del guild_data["users"][user_id_str]
                 await self.save()
                 return True
-        else: # Remove all platforms for user
+        else:
             if user_id_str in guild_data["users"]:
                 del guild_data["users"][user_id_str]
                 await self.save()
