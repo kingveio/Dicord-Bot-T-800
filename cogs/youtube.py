@@ -1,4 +1,5 @@
 import discord
+from discord import app_commands # <<< Adicione esta linha
 from discord.ext import commands
 import logging
 from config import Config
