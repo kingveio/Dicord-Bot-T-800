@@ -49,8 +49,15 @@ class T800Bot(commands.Bot):
             help_command=None
         )
         
+        # 1. Inicializa o DataManager
         self.data_manager = DataManager()
         self.data_manager.bot = self
+        
+        # 2. Inicializa o serviço do Google Drive e o passa para o DataManager
+        self.google_drive_service = GoogleDriveService()
+        self.data_manager.google_drive_service = self.google_drive_service
+        
+        # 3. Inicializa os demais serviços e atributos
         self.twitch_api = TwitchAPI()
         self.youtube_api = YouTubeAPI()
         self.health_server = HealthServer()
