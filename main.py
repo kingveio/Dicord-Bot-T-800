@@ -11,7 +11,7 @@ from data.data_manager import DataManager
 from cogs.live_monitor import LiveMonitor
 from cogs.twitch import TwitchCommands
 from cogs.youtube import YouTubeCommands
-from cogs.settings import SettingsCommands
+from cogs.settings import Settings
 from google_drive import GoogleDriveService # Importação do serviço de backup
 
 load_dotenv()
