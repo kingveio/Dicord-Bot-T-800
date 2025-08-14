@@ -7,7 +7,7 @@ import aiohttp
 import asyncio
 from dotenv import load_dotenv
 
-# Adiciona o diretório 'src' ao sys.path para resolver importações
+# Adiciona o diretório 'src' ao sys.path para resolver importações (mantido por segurança)
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from config import Config
@@ -16,7 +16,7 @@ from cogs.live_monitor import LiveMonitor
 from cogs.twitch import TwitchCommands
 from cogs.youtube import YouTubeCommands
 from cogs.settings import Settings
-from google_drive import GoogleDriveService # Importação corrigida
+from google_drive import GoogleDriveService # Importação corrigida para o mesmo diretório
 
 load_dotenv()
 Config.validate()
