@@ -17,14 +17,17 @@ class TwitchCommands(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def vincular_twitch(self, interaction: discord.Interaction, usuario: discord.Member, username: str):
         """Adiciona um canal da Twitch a um usuário"""
-        await interaction.response.send_message(f"Verificando o canal '{username}' na Twitch...", ephemeral=True)
+        # ✅ PASSO 1: Acknowledge a interação imediatamente com `defer`.
+        await interaction.response.defer(ephemeral=True, thinking=True)
         
         try:
-            # CORREÇÃO: Verifique o nome exato do método em sua classe TwitchAPI.
-            # O nome do método pode ser 'get_user_info', 'fetch_user', 'get_users', etc.
+            # ✅ PASSO 2: Realize a operação demorada (a chamada à API).
             user_info = await self.bot.twitch_api.get_user_info(username)
+            
             if not user_info:
-                return await interaction.followup.send(f"❌ Não foi possível encontrar o canal **{username}** na Twitch. Verifique o nome de usuário.")
+                # ✅ PASSO 3: Envie a resposta final como um followup.
+                await interaction.followup.send(f"❌ Não foi possível encontrar o canal **{username}** na Twitch. Verifique o nome de usuário.")
+                return
             
             success = await self.bot.data_manager.link_user_platform(
                 interaction.guild_id, usuario.id, "twitch", username
@@ -39,7 +42,7 @@ class TwitchCommands(commands.Cog):
                 await interaction.followup.send(embed=embed)
             else:
                 await interaction.followup.send(f"❌ Ocorreu um erro ao vincular o canal.")
-                
+            
         except Exception as e:
             logger.error(f"Erro no comando adicionar_twitch: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Ocorreu um erro inesperado: {e}")
@@ -51,7 +54,8 @@ class TwitchCommands(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def remover_twitch(self, interaction: discord.Interaction, usuario: discord.Member):
         """Remove o vínculo da Twitch de um usuário"""
-        await interaction.response.send_message(f"Removendo vínculo da Twitch de {usuario.mention}...", ephemeral=True)
+        # ✅ PASSO 1: Acknowledge a interação imediatamente com `defer`.
+        await interaction.response.defer(ephemeral=True, thinking=True)
         
         try:
             success = await self.bot.data_manager.remove_account(
