@@ -4,6 +4,7 @@ import discord
 from discord.ext import commands
 import logging
 import aiohttp
+from aiohttp import web # Adicione a importação para o servidor web
 import asyncio
 from dotenv import load_dotenv
 
@@ -33,7 +34,7 @@ class DiscordBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
         intents.members = True
-        intents.message_content = True # Adicione esta linha
+        intents.message_content = True
         super().__init__(command_prefix='!', intents=intents)
         
         self.session = aiohttp.ClientSession()
@@ -74,16 +75,36 @@ class DiscordBot(commands.Bot):
         await super().close()
         await self.session.close()
 
-async def start_server():
+# Função para criar e rodar o servidor web
+async def web_server():
+    async def handler(request):
+        return web.Response(text="Bot está online!")
+
+    app = web.Application()
+    app.router.add_get("/", handler)
+    
+    port = int(os.getenv("PORT", 8080))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    logger.info(f"Servidor web rodando na porta {port}")
+
+async def main_loop():
     bot = DiscordBot()
-    # Inicializa o serviço do Google Drive e passa para o DataManager
+    
     if os.getenv('GOOGLE_CREDENTIALS'):
         bot.google_drive_service = GoogleDriveService()
         bot.data_manager.google_drive_service = bot.google_drive_service
+        
+    await bot.start(Config.DISCORD_TOKEN)
 
-    # Rodar o bot
-    async with bot:
-        await bot.start(Config.DISCORD_TOKEN)
+# A nova função `start_server` executa o bot e o servidor web juntos
+async def start_server():
+    server_task = asyncio.create_task(web_server())
+    bot_task = asyncio.create_task(main_loop())
+    
+    await asyncio.gather(server_task, bot_task)
 
 # Iniciar o bot
 if __name__ == "__main__":
