@@ -17,6 +17,7 @@ class TwitchCommands(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def vincular_twitch(self, interaction: discord.Interaction, usuario: discord.Member, username: str):
         """Adiciona um canal da Twitch a um usuário"""
+        # ✅ CORREÇÃO: Responde imediatamente para evitar o timeout.
         await interaction.response.defer(ephemeral=True, thinking=True)
         
         try:
@@ -24,6 +25,7 @@ class TwitchCommands(commands.Cog):
             user_id = await self.bot.twitch_api._get_user_id(username)
             
             if not user_id:
+                # ✅ Use followup.send após o defer
                 await interaction.followup.send(f"❌ Não foi possível encontrar o canal **{username}** na Twitch. Verifique o nome de usuário.")
                 return
             
@@ -37,8 +39,10 @@ class TwitchCommands(commands.Cog):
                     description=f"O canal **{username}** agora está vinculado a conta de {usuario.mention}.",
                     color=discord.Color.purple()
                 )
+                # ✅ Use followup.send após o defer
                 await interaction.followup.send(embed=embed)
             else:
+                # ✅ Use followup.send após o defer
                 await interaction.followup.send(f"❌ Ocorreu um erro ao vincular o canal.")
             
         except Exception as e:
@@ -52,7 +56,7 @@ class TwitchCommands(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def remover_twitch(self, interaction: discord.Interaction, usuario: discord.Member):
         """Remove o vínculo da Twitch de um usuário"""
-        # ✅ PASSO 1: Acknowledge a interação imediatamente com `defer`.
+        # ✅ CORREÇÃO: Responde imediatamente para evitar o timeout.
         await interaction.response.defer(ephemeral=True, thinking=True)
         
         try:
@@ -61,8 +65,10 @@ class TwitchCommands(commands.Cog):
             )
             
             if success:
+                # ✅ Use followup.send após o defer
                 await interaction.followup.send(f"🗑️ Vínculo da Twitch removido de {usuario.mention} com sucesso.")
             else:
+                # ✅ Use followup.send após o defer
                 await interaction.followup.send(f"ℹ️ {usuario.mention} não tinha um vínculo da Twitch para remover.")
         except Exception as e:
             logger.error(f"Erro ao remover vínculo da Twitch: {e}", exc_info=True)
