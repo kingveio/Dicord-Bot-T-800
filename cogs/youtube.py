@@ -6,9 +6,6 @@ from config import Config
 
 logger = logging.getLogger(__name__)
 
-# Nota: A classe YouTubeAPI pode estar em 'services/youtube_api.py'.
-# Se for o caso, você pode remover esta classe do arquivo e usar
-# self.bot.youtube_api diretamente, como no __init__.
 class YouTubeCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -21,6 +18,9 @@ class YouTubeCommands(commands.Cog):
     @app_commands.default_permissions(administrator=True)
     async def add_youtube(self, interaction: discord.Interaction, canal: str, usuario: discord.Member):
         """Implementação do comando de vincular YouTube"""
+        # ✅ CORREÇÃO: Use defer para responder imediatamente e evitar timeout
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        
         try:
             # O ID da guilda e do usuário são obtidos da interação
             success = await self.bot.data_manager.link_user_platform(
@@ -30,17 +30,15 @@ class YouTubeCommands(commands.Cog):
                 canal
             )
             
-            await interaction.response.send_message(
-                f"✅ Canal YouTube `{canal}` vinculado a {usuario.mention}" if success
-                else "❌ Falha ao vincular canal",
-                ephemeral=True
-            )
+            if success:
+                # ✅ Use followup.send após o defer
+                await interaction.followup.send(f"✅ Canal YouTube `{canal}` vinculado a {usuario.mention}")
+            else:
+                await interaction.followup.send("❌ Falha ao vincular canal")
+            
         except Exception as e:
             logger.error(f"Erro no comando YouTube: {e}", exc_info=True)
-            await interaction.response.send_message(
-                "❌ Ocorreu um erro ao processar sua solicitação",
-                ephemeral=True
-            )
+            await interaction.followup.send("❌ Ocorreu um erro ao processar sua solicitação")
 
     @app_commands.command(name="remover_youtube", description="Remove o vínculo de um canal YouTube de um usuário")
     @app_commands.describe(
@@ -49,6 +47,9 @@ class YouTubeCommands(commands.Cog):
     @app_commands.default_permissions(administrator=True)
     async def remove_youtube(self, interaction: discord.Interaction, usuario: discord.Member):
         """Remove o vínculo do YouTube"""
+        # ✅ CORREÇÃO: Use defer para responder imediatamente e evitar timeout
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        
         try:
             success = await self.bot.data_manager.remove_account(
                 interaction.guild.id,
@@ -56,17 +57,14 @@ class YouTubeCommands(commands.Cog):
                 "youtube"
             )
             
-            await interaction.response.send_message(
-                f"🗑️ YouTube desvinculado de {usuario.mention}" if success
-                else "ℹ️ Nada para remover",
-                ephemeral=True
-            )
+            if success:
+                # ✅ Use followup.send após o defer
+                await interaction.followup.send(f"🗑️ YouTube desvinculado de {usuario.mention}")
+            else:
+                await interaction.followup.send("ℹ️ Nada para remover")
         except Exception as e:
             logger.error(f"Erro ao desvincular YouTube: {e}", exc_info=True)
-            await interaction.response.send_message(
-                "❌ Ocorreu um erro ao processar sua solicitação",
-                ephemeral=True
-            )
+            await interaction.followup.send("❌ Ocorreu um erro ao processar sua solicitação")
 
 async def setup(bot):
     await bot.add_cog(YouTubeCommands(bot))
