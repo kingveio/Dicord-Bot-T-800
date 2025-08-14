@@ -3,6 +3,7 @@ import logging
 from typing import Optional, Tuple
 import base64
 import json
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -46,10 +47,11 @@ class GoogleDriveService:
             return None
 
     async def upload_file(self, file_path: str) -> Tuple[bool, str]:
-        """Tenta fazer upload de um arquivo"""
+        """Tenta fazer upload de um arquivo de forma assíncrona"""
         if not self.service:
             return False, "Serviço não configurado"
         
+        loop = asyncio.get_running_loop()
         try:
             file_name = os.path.basename(file_path)
             file_metadata = {
@@ -58,38 +60,52 @@ class GoogleDriveService:
             }
             
             media = MediaFileUpload(file_path, mimetype='application/json')
-            file = self.service.files().create(
-                body=file_metadata,
-                media_body=media,
-                fields='id,name'
-            ).execute()
+            
+            # Executa a chamada síncrona em um threadpool
+            file = await loop.run_in_executor(
+                None,
+                self.service.files().create(
+                    body=file_metadata,
+                    media_body=media,
+                    fields='id,name'
+                ).execute
+            )
             
             return True, f"Arquivo {file.get('name')} enviado com sucesso"
         except Exception as e:
+            logger.error(f"Erro no upload do Google Drive: {e}")
             return False, str(e)
 
     async def download_file(self, file_name: str, save_path: str) -> Tuple[bool, str]:
-        """Tenta baixar um arquivo"""
+        """Tenta baixar um arquivo de forma assíncrona"""
         if not self.service:
             return False, "Serviço não configurado"
-        
+            
+        loop = asyncio.get_running_loop()
         try:
-            results = self.service.files().list(
-                q=f"name='{file_name}'",
-                fields="files(id, name)"
-            ).execute()
+            # Executa a chamada síncrona em um threadpool
+            results = await loop.run_in_executor(
+                None,
+                self.service.files().list(
+                    q=f"name='{file_name}'",
+                    fields="files(id, name)"
+                ).execute
+            )
             
             items = results.get('files', [])
             if not items:
                 return False, "Arquivo não encontrado"
             
             request = self.service.files().get_media(fileId=items[0]['id'])
+            
+            # Baixa o arquivo em um threadpool
             with open(save_path, 'wb') as f:
-                downloader = MediaIoBaseDownload(f, request)
-                done = False
-                while not done:
-                    status, done = downloader.next_chunk()
+                await loop.run_in_executor(
+                    None,
+                    MediaIoBaseDownload(f, request).next_chunk
+                )
             
             return True, f"Arquivo {items[0]['name']} baixado com sucesso"
         except Exception as e:
+            logger.error(f"Erro no download do Google Drive: {e}")
             return False, str(e)
