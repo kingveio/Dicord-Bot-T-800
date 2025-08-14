@@ -20,7 +20,29 @@ class DataManager:
             "guilds": {}
         }
         self._lock = asyncio.Lock()
+async def save(self) -> None:
+    """Salva os dados localmente e faz backup se o serviço estiver disponível"""
+    async with self._lock:
+        try:
+            # Lógica de salvamento local (já existente)
+            self._data["last_updated"] = datetime.now().isoformat()
+            async with aiofiles.open(self.filepath, "w", encoding="utf-8") as f:
+                await f.write(json.dumps(self._data, indent=2, ensure_ascii=False))
 
+            logger.info("Dados salvos com sucesso")
+
+            # --- Adicione esta parte para o backup ---
+            if hasattr(self, 'google_drive_service') and self.google_drive_service.service:
+                success, message = await self.google_drive_service.upload_file(self.filepath)
+                if success:
+                    logger.info(f"✅ Backup no Google Drive: {message}")
+                else:
+                    logger.warning(f"⚠️ Falha no backup do Google Drive: {message}")
+            # ----------------------------------------
+        except Exception as e:
+            logger.error(f"Falha ao salvar dados: {e}")
+            raise
+            
     async def load(self) -> None:
         """Carrega dados do arquivo local ou cria nova estrutura"""
         async with self._lock:
