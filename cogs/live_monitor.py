@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timezone
 import random
 import asyncio
+from typing import Optional # <<< Adicione esta linha
 from data.models import UserPlatform
 from config import Config
 
