@@ -17,15 +17,13 @@ class TwitchCommands(commands.Cog):
     @app_commands.checks.has_permissions(administrator=True)
     async def vincular_twitch(self, interaction: discord.Interaction, usuario: discord.Member, username: str):
         """Adiciona um canal da Twitch a um usuário"""
-        # ✅ PASSO 1: Acknowledge a interação imediatamente com `defer`.
         await interaction.response.defer(ephemeral=True, thinking=True)
         
         try:
-            # ✅ PASSO 2: Realize a operação demorada (a chamada à API).
-            user_info = await self.bot.twitch_api.get_user_info(username)
+            # ✅ CORREÇÃO: Usando o método '_get_user_id' que existe em TwitchAPI
+            user_id = await self.bot.twitch_api._get_user_id(username)
             
-            if not user_info:
-                # ✅ PASSO 3: Envie a resposta final como um followup.
+            if not user_id:
                 await interaction.followup.send(f"❌ Não foi possível encontrar o canal **{username}** na Twitch. Verifique o nome de usuário.")
                 return
             
