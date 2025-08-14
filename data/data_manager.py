@@ -7,8 +7,6 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 import os
 
-from ..google_drive import GoogleDriveService # Importação corrigida para o diretório pai
-
 logger = logging.getLogger(__name__)
 
 class DataManager:
@@ -22,17 +20,16 @@ class DataManager:
             "guilds": {}
         }
         self._lock = asyncio.Lock()
-        self.google_drive_service: Optional[GoogleDriveService] = None
+        self.google_drive_service: Optional[object] = None # O serviço agora é injetado
 
     async def init_services(self, bot):
         """Inicializa serviços que dependem do bot"""
         self.bot = bot
-        if os.getenv('GOOGLE_CREDENTIALS'):
-            self.google_drive_service = GoogleDriveService()
+        if self.google_drive_service:
             logger.info("✅ Serviço Google Drive inicializado")
             await self.load()
         else:
-            logger.warning("Variável GOOGLE_CREDENTIALS não encontrada. Backup desativado.")
+            logger.warning("Serviço Google Drive não configurado. Backup desativado.")
             await self.load()
     
     async def load(self) -> None:
