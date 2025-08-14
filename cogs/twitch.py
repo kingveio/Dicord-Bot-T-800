@@ -20,8 +20,10 @@ class TwitchCommands(commands.Cog):
         await interaction.response.send_message(f"Verificando o canal '{username}' na Twitch...", ephemeral=True)
         
         try:
-            channel_id = await self.bot.twitch_api.get_channel_id(username)
-            if not channel_id:
+            # CORREÇÃO: Usando um método mais provável para obter o ID do usuário
+            # Se 'get_user_id' não funcionar, verifique o nome exato na sua classe TwitchAPI
+            user_info = await self.bot.twitch_api.get_user_id(username)
+            if not user_info:
                 return await interaction.followup.send(f"❌ Não foi possível encontrar o canal **{username}** na Twitch. Verifique o nome de usuário.")
             
             success = await self.bot.data_manager.link_user_platform(
