@@ -46,13 +46,13 @@ class DiscordBot(commands.Bot):
         
         # Carregar cogs
         for cog_file in os.listdir('./cogs'):
-        if cog_file.endswith('.py') and cog_file != '__init__.py':
-        cog_name = cog_file[:-3]
-        try:
-            await self.load_extension(f'cogs.{cog_name}')
-            logger.info(f"✅ Cog carregado: cogs.{cog_name}")
-        except Exception as e:
-            logger.error(f"❌ Falha ao carregar cogs.{cog_name}: {e}", exc_info=True)
+            if cog_file.endswith('.py') and cog_file != '__init__.py':
+            cog_name = cog_file[:-3]
+            try:
+                await self.load_extension(f'cogs.{cog_name}')
+                logger.info(f"✅ Cog carregado: cogs.{cog_name}")
+            except Exception as e:
+                logger.error(f"❌ Falha ao carregar cogs.{cog_name}: {e}", exc_info=True)
             
         # Sincronizar comandos slash
         synced = await self.tree.sync()
