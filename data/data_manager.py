@@ -5,14 +5,14 @@ import logging
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Optional
-from .models import GuildData, UserData, GuildConfig
+from .models import GuildData, UserData, GuildConfig, UserPlatform # Adicionada a importação de UserPlatform
 
 logger = logging.getLogger(__name__)
 
 class DataManager:
     def __init__(self):
-        self.bot = None  # Será definido pelo bot
-        self.google_drive_service = None # Será definido pelo bot
+        self.bot = None
+        self.google_drive_service = None
         self.data_dir = Path("data")
         self.filepath = self.data_dir / "streamers.json"
         self._data: Dict[str, Any] = {
@@ -30,7 +30,6 @@ class DataManager:
         async with self._lock:
             self.data_dir.mkdir(exist_ok=True)
             
-            # 1. Tenta carregar do arquivo local
             if self.filepath.exists():
                 try:
                     async with aiofiles.open(self.filepath, "r", encoding="utf-8") as f:
@@ -42,7 +41,6 @@ class DataManager:
             else:
                 logger.warning("⚠️ Arquivo local não encontrado. Tentando restaurar do backup...")
 
-            # 2. Se o arquivo local falhar, tenta baixar do Google Drive
             if self.google_drive_service and self.google_drive_service.service:
                 try:
                     success, message = await self.google_drive_service.download_file(
@@ -50,7 +48,6 @@ class DataManager:
                     )
                     if success:
                         logger.info(f"✅ Backup restaurado: {message}")
-                        # Após restaurar, tenta carregar novamente o arquivo
                         async with aiofiles.open(self.filepath, "r", encoding="utf-8") as f:
                             self._data = json.loads(await f.read())
                         return
@@ -59,7 +56,6 @@ class DataManager:
                 except Exception as e:
                     logger.error(f"❌ Erro no processo de restauração do backup: {e}")
 
-            # 3. Se tudo falhar, usa a estrutura de dados padrão
             self._data = {
                 "version": "1.0",
                 "created_at": datetime.now().isoformat(),
@@ -71,14 +67,12 @@ class DataManager:
         """Salva os dados localmente e faz backup se o serviço estiver disponível"""
         async with self._lock:
             try:
-                # Lógica de salvamento local (já existente)
                 self._data["last_updated"] = datetime.now().isoformat()
                 async with aiofiles.open(self.filepath, "w", encoding="utf-8") as f:
                     await f.write(json.dumps(self._data, indent=2, ensure_ascii=False))
                 
                 logger.info("✅ Dados salvos com sucesso")
                 
-                # --- Lógica de backup ---
                 if self.google_drive_service and self.google_drive_service.service:
                     success, message = await self.google_drive_service.upload_file(self.filepath)
                     if success:
@@ -110,7 +104,7 @@ class DataManager:
         """Vincula uma plataforma a um usuário"""
         try:
             guild_data = self.get_guild(guild_id)
-            if str(user_id) not in guild_data.users:
+            if user_id not in guild_data.users:
                 guild_data.users[user_id] = UserData(discord_id=user_id)
             
             user_data = guild_data.users[user_id]
