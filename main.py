@@ -4,7 +4,7 @@ import discord
 from discord.ext import commands
 import logging
 import aiohttp
-from aiohttp import web # Adicione a importação para o servidor web
+from aiohttp import web
 import asyncio
 from dotenv import load_dotenv
 
@@ -78,10 +78,14 @@ class DiscordBot(commands.Bot):
 # Função para criar e rodar o servidor web
 async def web_server():
     async def handler(request):
+        # Este handler responderá tanto a "/" quanto a "/health"
         return web.Response(text="Bot está online!")
 
     app = web.Application()
+    # Adiciona a rota principal
     app.router.add_get("/", handler)
+    # Adiciona a rota de health check para o Render
+    app.router.add_get("/health", handler)
     
     port = int(os.getenv("PORT", 8080))
     runner = web.AppRunner(app)
