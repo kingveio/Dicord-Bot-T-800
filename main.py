@@ -1,4 +1,5 @@
 import os
+import sys
 import discord
 from discord.ext import commands
 import logging
@@ -6,13 +7,16 @@ import aiohttp
 import asyncio
 from dotenv import load_dotenv
 
+# Adiciona o diretório 'src' ao sys.path para resolver importações
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+
 from config import Config
 from data.data_manager import DataManager
 from cogs.live_monitor import LiveMonitor
 from cogs.twitch import TwitchCommands
 from cogs.youtube import YouTubeCommands
 from cogs.settings import Settings
-from src.google_drive import GoogleDriveService
+from google_drive import GoogleDriveService # Importação corrigida
 
 load_dotenv()
 Config.validate()
