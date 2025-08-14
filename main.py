@@ -46,8 +46,8 @@ class DiscordBot(commands.Bot):
         
         # Carregar cogs
         for cog_file in os.listdir('./cogs'):
-            if cog_file.endswith('.py') and cog_file != '__init__.py':
-            cog_name = cog_file[:-3]
+            if  cog_file.endswith('.py') and cog_file != '__init__.py':
+                cog_name = cog_file[:-3]
             try:
                 await self.load_extension(f'cogs.{cog_name}')
                 logger.info(f"✅ Cog carregado: cogs.{cog_name}")
