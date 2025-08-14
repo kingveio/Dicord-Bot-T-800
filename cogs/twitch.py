@@ -10,8 +10,12 @@ class TwitchCommands(commands.Cog):
         self.bot = bot
 
     @app_commands.command(name="adicionar_twitch", description="Adiciona um canal da Twitch para ser monitorado")
-    @app_commands.describe(username="O nome de usuário da Twitch")
-    async def vincular_twitch(self, interaction: discord.Interaction, username: str):
+    @app_commands.describe(
+        usuario="Usuário do Discord para adicionar",
+        username="O nome de usuário da Twitch"
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def vincular_twitch(self, interaction: discord.Interaction, usuario: discord.Member, username: str):
         """Adiciona um canal da Twitch a um usuário"""
         await interaction.response.send_message(f"Verificando o canal '{username}' na Twitch...", ephemeral=True)
         
@@ -20,23 +24,44 @@ class TwitchCommands(commands.Cog):
             if not channel_id:
                 return await interaction.followup.send(f"❌ Não foi possível encontrar o canal **{username}** na Twitch. Verifique o nome de usuário.")
             
-            # Chama a função do DataManager para vincular o usuário e a plataforma
             success = await self.bot.data_manager.link_user_platform(
-                interaction.guild_id, interaction.user.id, "twitch", username
+                interaction.guild_id, usuario.id, "twitch", username
             )
             
             if success:
                 embed = discord.Embed(
                     title="Twitch adicionado com sucesso!",
-                    description=f"O canal **{username}** agora está vinculado a sua conta no servidor. Você receberá notificações quando ele entrar em live.",
+                    description=f"O canal **{username}** agora está vinculado a conta de {usuario.mention}.",
                     color=discord.Color.purple()
                 )
                 await interaction.followup.send(embed=embed)
             else:
-                await interaction.followup.send(f"❌ Ocorreu um erro ao vincular seu canal.")
+                await interaction.followup.send(f"❌ Ocorreu um erro ao vincular o canal.")
                 
         except Exception as e:
-            logger.error(f"Erro no comando twitch: {e}", exc_info=True)
+            logger.error(f"Erro no comando adicionar_twitch: {e}", exc_info=True)
+            await interaction.followup.send(f"❌ Ocorreu um erro inesperado: {e}")
+
+    @app_commands.command(name="remover_twitch", description="Remove o vínculo de uma conta Twitch de um usuário")
+    @app_commands.describe(
+        usuario="Usuário do Discord para remover o vínculo"
+    )
+    @app_commands.checks.has_permissions(administrator=True)
+    async def remover_twitch(self, interaction: discord.Interaction, usuario: discord.Member):
+        """Remove o vínculo da Twitch de um usuário"""
+        await interaction.response.send_message(f"Removendo vínculo da Twitch de {usuario.mention}...", ephemeral=True)
+        
+        try:
+            success = await self.bot.data_manager.remove_account(
+                interaction.guild_id, usuario.id, "twitch"
+            )
+            
+            if success:
+                await interaction.followup.send(f"🗑️ Vínculo da Twitch removido de {usuario.mention} com sucesso.")
+            else:
+                await interaction.followup.send(f"ℹ️ {usuario.mention} não tinha um vínculo da Twitch para remover.")
+        except Exception as e:
+            logger.error(f"Erro ao remover vínculo da Twitch: {e}", exc_info=True)
             await interaction.followup.send(f"❌ Ocorreu um erro inesperado: {e}")
 
 async def setup(bot):
