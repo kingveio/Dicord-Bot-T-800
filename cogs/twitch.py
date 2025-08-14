@@ -22,7 +22,7 @@ class TwitchCommands(commands.Cog):
         try:
             # CORREÇÃO: Verifique o nome exato do método em sua classe TwitchAPI.
             # O nome do método pode ser 'get_user_info', 'fetch_user', 'get_users', etc.
-            user_info = await self.bot.twitch_api.fetch_user(username)
+            user_info = await self.bot.twitch_api.get_user_info(username)
             if not user_info:
                 return await interaction.followup.send(f"❌ Não foi possível encontrar o canal **{username}** na Twitch. Verifique o nome de usuário.")
             
