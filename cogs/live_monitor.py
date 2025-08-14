@@ -4,9 +4,13 @@ import logging
 from datetime import datetime, timezone
 import random
 import asyncio
-from typing import Optional # <<< Adicione esta linha
-from data.models import UserPlatform
+from typing import Optional
+
+# Os imports abaixo precisam ser ajustados conforme sua estrutura
+from data.data_manager import DataManager
 from config import Config
+from services.twitch_api import TwitchAPI
+from services.youtube_api import YouTubeAPI
 
 logger = logging.getLogger(__name__)
 
@@ -24,63 +28,68 @@ class LiveMonitor(commands.Cog):
         """Verifica se os streamers estão online e envia notificações"""
         await self.bot.wait_until_ready()
         
-        for guild in self.bot.guilds:
-            try:
-                guild_data = self.bot.data_manager.get_guild(guild.id)
-                
-                # Acessa os atributos do objeto config, não do dicionário
-                live_role_id = guild_data['config'].get('live_role_id')
-                notify_channel_id = guild_data.config.notify_channel_id
-                
-                if not live_role_id or not notify_channel_id:
-                    continue # Pula se as configurações estiverem incompletas
-                
-                live_role = guild.get_role(live_role_id)
-                notify_channel = guild.get_channel(notify_channel_id)
-                
-                if not live_role or not notify_channel:
-                    continue # Pula se o cargo ou canal não forem encontrados
-
-                for user_id, user_data in guild_data.users.items():
-                    member = guild.get_member(user_id)
-                    if not member:
-                        continue
+        # Cria um lock para evitar que o DataManager seja acessado de forma concorrente
+        async with self.bot.data_manager._lock:
+            for guild in self.bot.guilds:
+                try:
+                    guild_data = self.bot.data_manager.get_guild(guild.id)
                     
-                    if user_data.twitch:
-                        is_live, title = await self.bot.twitch_api.is_live(user_data.twitch.username)
-                        await self._update_platform_status(
-                            member=member,
-                            platform_data=user_data.twitch,
-                            is_live=is_live,
-                            title=title,
-                            notify_channel=notify_channel,
-                            platform_name="Twitch",
-                            live_role=live_role
-                        )
-                        
-                    if user_data.youtube:
-                        is_live, title = await self.bot.youtube_api.is_live(user_data.youtube.username)
-                        await self._update_platform_status(
-                            member=member,
-                            platform_data=user_data.youtube,
-                            is_live=is_live,
-                            title=title,
-                            notify_channel=notify_channel,
-                            platform_name="YouTube",
-                            live_role=live_role
-                        )
-                        
-                # Salva o estado atualizado dos dados após o loop
-                self.bot.data_manager._data["guilds"][str(guild.id)] = guild_data.to_dict()
-                await self.bot.data_manager.save()
+                    # Acessa os dados como dicionário, usando .get() para evitar KeyError
+                    live_role_id = guild_data['config'].get('live_role_id')
+                    notify_channel_id = guild_data['config'].get('notify_channel_id')
+                    
+                    if not live_role_id or not notify_channel_id:
+                        continue # Pula se as configurações estiverem incompletas
+                    
+                    live_role = guild.get_role(int(live_role_id))
+                    notify_channel = guild.get_channel(int(notify_channel_id))
+                    
+                    if not live_role or not notify_channel:
+                        continue # Pula se o cargo ou canal não forem encontrados
 
-            except Exception as e:
-                logger.error(f"Erro no check_live para a guilda {guild.id}: {e}", exc_info=True)
+                    # Acessa a lista de usuários como um dicionário
+                    for user_id_str, user_data in guild_data['users'].items():
+                        member = guild.get_member(int(user_id_str))
+                        if not member:
+                            continue
+                        
+                        # Acessa as plataformas como chaves de dicionário, usando .get()
+                        if user_data.get('twitch'):
+                            twitch_data = user_data['twitch']
+                            is_live, title = await self.bot.twitch_api.is_live(twitch_data['username'])
+                            await self._update_platform_status(
+                                member=member,
+                                platform_data=twitch_data,
+                                is_live=is_live,
+                                title=title,
+                                notify_channel=notify_channel,
+                                platform_name="Twitch",
+                                live_role=live_role
+                            )
+                            
+                        if user_data.get('youtube'):
+                            youtube_data = user_data['youtube']
+                            is_live, title = await self.bot.youtube_api.is_live(youtube_data['username'])
+                            await self._update_platform_status(
+                                member=member,
+                                platform_data=youtube_data,
+                                is_live=is_live,
+                                title=title,
+                                notify_channel=notify_channel,
+                                platform_name="YouTube",
+                                live_role=live_role
+                            )
+                            
+                except Exception as e:
+                    logger.error(f"Erro no check_live para a guilda {guild.id}: {e}", exc_info=True)
+
+            # Salva o estado atualizado dos dados uma única vez, após o loop de todas as guildas
+            await self.bot.data_manager.save()
 
     async def _update_platform_status(
         self,
         member: discord.Member,
-        platform_data: UserPlatform,
+        platform_data: dict, # O tipo é um dicionário
         is_live: bool,
         title: Optional[str],
         notify_channel: discord.TextChannel,
@@ -90,24 +99,29 @@ class LiveMonitor(commands.Cog):
         """Lógica central para verificar e notificar status de live"""
         
         # Atualiza o timestamp da última verificação
-        platform_data.last_checked = datetime.now(timezone.utc)
+        platform_data['last_checked'] = datetime.now(timezone.utc).isoformat()
 
         # Lógica de notificação e atualização de cargo
-        if is_live and not platform_data.is_live:
+        if is_live and not platform_data.get('is_live'):
             # Usuário entrou em live
-            platform_data.is_live = True
-            platform_data.last_live_title = title
+            platform_data['is_live'] = True
+            platform_data['last_live_title'] = title
             
             await self._notify_live(member, platform_name, title, notify_channel)
             await self._manage_live_role(member, live_role, True)
             
-        elif not is_live and platform_data.is_live:
+        elif not is_live and platform_data.get('is_live'):
             # Usuário saiu da live
-            platform_data.is_live = False
+            platform_data['is_live'] = False
             
             # Verifica se o membro ainda está em live em outra plataforma antes de remover o cargo
-            other_platform_live = (platform_name == "Twitch" and member.youtube and member.youtube.is_live) or \
-                                  (platform_name == "YouTube" and member.twitch and member.twitch.is_live)
+            other_platform_live = False
+            user_data = self.bot.data_manager.get_guild(member.guild.id)['users'].get(str(member.id))
+            if user_data:
+                if platform_name == "Twitch" and user_data.get('youtube') and user_data['youtube'].get('is_live'):
+                    other_platform_live = True
+                elif platform_name == "YouTube" and user_data.get('twitch') and user_data['twitch'].get('is_live'):
+                    other_platform_live = True
             
             if not other_platform_live:
                 await self._manage_live_role(member, live_role, False)
@@ -146,7 +160,7 @@ class LiveMonitor(commands.Cog):
         if platform_name == "Twitch":
             return f"https://www.twitch.tv/{username}"
         elif platform_name == "YouTube":
-            return f"https://www.youtube.com/@{username}/live"
+            return f"https://www.youtube.com/channel/{username}/live"
         return ""
     
 async def setup(bot):
