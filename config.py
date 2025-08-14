@@ -11,6 +11,9 @@ class Config:
     TWITCH_CLIENT_SECRET: str = os.getenv("TWITCH_CLIENT_SECRET")
     YOUTUBE_API_KEY: str = os.getenv("YOUTUBE_API_KEY")
     
+    # Intervalos de verificação
+    LIVE_CHECK_INTERVAL_MINUTES: int = int(os.getenv("LIVE_CHECK_INTERVAL_MINUTES", "5"))
+
     # Configurações opcionais
     RENDER_SERVICE_NAME: Optional[str] = os.getenv("RENDER_SERVICE_NAME")
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
