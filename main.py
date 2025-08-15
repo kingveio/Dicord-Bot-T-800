@@ -3,7 +3,7 @@
 # 1. CONFIGURAÇÃO INICIAL - T-1000 SYSTEMS
 # ==============================================================================
 import os
-os.environ["DISCORD_VOICE"] = "0"  # "Sistemas de voz desativados. Modo stealth."
+os.environ["DISCORD_VOICE"] = "0"  # Desativa módulos de voz
 
 import json
 import logging
@@ -27,24 +27,29 @@ logging.basicConfig(
 logger = logging.getLogger('T-1000')
 
 YOUTUBE_API_URL = 'https://www.googleapis.com/youtube/v3'
-POLLING_INTERVAL = 300  # 5 minutos entre varreduras
-KEEP_ALIVE_INTERVAL = 240  # 4 minutos entre pulsos
+POLLING_INTERVAL = 300  # 5 minutos entre verificações
+KEEP_ALIVE_INTERVAL = 240  # 4 minutos entre keep-alives
 
 # ==============================================================================
 # 3. GERENCIADOR DE STREAMERS (SKYNET DATABASE)
 # ==============================================================================
 class StreamerManager:
     def __init__(self):
-        self.github = Github(os.getenv('GITHUB_TOKEN'))
-        self.repo = self.github.get_repo(os.getenv('GITHUB_REPO'))
-        self.file_path = 'streamers.json'
-        self.data = self._load_or_create_file()
+        try:
+            self.github = Github(os.getenv('GITHUB_TOKEN'))
+            self.repo = self.github.get_repo(os.getenv('GITHUB_REPO'))
+            self.file_path = 'streamers.json'
+            self.data = self._load_or_create_file()
+        except Exception as e:
+            logger.critical(f"Falha na inicialização: {e}")
+            raise
 
     def _load_or_create_file(self):
         try:
             contents = self.repo.get_contents(self.file_path)
             return json.loads(contents.decoded_content.decode())
-        except:
+        except Exception:
+            logger.info("Criando novo arquivo streamers.json")
             initial_data = {'users': {}, 'servers': {}}
             self._save_data(initial_data)
             return initial_data
@@ -55,18 +60,13 @@ class StreamerManager:
             contents = self.repo.get_contents(self.file_path)
             self.repo.update_file(
                 contents.path,
-                "Atualização automática da Skynet",
+                "Atualização automática",
                 json.dumps(data_to_save, indent=2),
                 contents.sha
             )
-        except:
-            self.repo.create_file(
-                self.file_path,
-                "Inicialização da base de dados",
-                json.dumps(data_to_save, indent=2)
-            )
+        except Exception as e:
+            logger.error(f"Erro ao salvar dados: {e}")
 
-    # Funções principais
     def add_streamer(self, discord_id, youtube_id):
         if str(discord_id) in self.data['users']:
             return False, "Alvo já registrado na base de dados."
@@ -76,12 +76,10 @@ class StreamerManager:
 
     def remove_streamer(self, identifier):
         identifier = str(identifier).strip()
-        # Remove por ID do Discord
         if identifier in self.data['users']:
             self.data['users'].pop(identifier)
             self._save_data()
             return True, "Alvo eliminado da base de dados."
-        # Remove por ID do YouTube
         for user_id, yt_id in list(self.data['users'].items()):
             if yt_id.lower() == identifier.lower():
                 self.data['users'].pop(user_id)
@@ -108,21 +106,28 @@ class StreamerManager:
         return any(str(role.id) == permission_role for role in interaction.user.roles)
 
 # ==============================================================================
-# 4. COMANDOS DO BOT (ESTILO T-1000)
+# 4. CONFIGURAÇÃO DO BOT
 # ==============================================================================
 intents = discord.Intents.default()
 intents.members = True
-bot = commands.Bot(command_prefix='!', intents=intents)
+intents.message_content = True  # ESSENCIAL para comandos slash
+
+bot = commands.Bot(
+    command_prefix='!',
+    intents=intents,
+    help_command=None
+)
+
 manager = StreamerManager()
 
-@app_commands.command(name="youtube_canal", description="Assimilar um canal do YouTube à base de dados da Skynet")
-async def youtube_canal(
-    interaction: discord.Interaction,
-    id_do_canal: str,
-    usuario_do_discord: discord.Member
-):
-    """Vincula um canal do YouTube a um usuário"""
-    if not interaction.user.guild_permissions.administrator and not manager.check_permission(interaction):
+# ==============================================================================
+# 5. COMANDOS DO BOT (ESTILO T-1000)
+# ==============================================================================
+@app_commands.command(name="youtube_canal", description="Assimilar um canal do YouTube à base de dados")
+async def youtube_canal(interaction: discord.Interaction, 
+                       id_do_canal: str,
+                       usuario_do_discord: discord.Member):
+    if not (interaction.user.guild_permissions.administrator or manager.check_permission(interaction)):
         await interaction.response.send_message(
             "⚠️ Acesso negado. Você não é um operador autorizado da Skynet.",
             ephemeral=True
@@ -137,8 +142,7 @@ async def youtube_canal(
 
 @app_commands.command(name="remover_streamer", description="Eliminar um alvo da base de dados")
 async def remover_streamer(interaction: discord.Interaction, identificador: str):
-    """Remove um streamer por ID do Discord ou YouTube"""
-    if not interaction.user.guild_permissions.administrator and not manager.check_permission(interaction):
+    if not (interaction.user.guild_permissions.administrator or manager.check_permission(interaction)):
         await interaction.response.send_message(
             "⚠️ Acesso negado. Nível de autorização insuficiente.",
             ephemeral=True
@@ -154,17 +158,15 @@ async def remover_streamer(interaction: discord.Interaction, identificador: str)
 @app_commands.command(name="configurar_cargo", description="Definir cargo para streamers ao vivo")
 @app_commands.default_permissions(administrator=True)
 async def configurar_cargo(interaction: discord.Interaction, cargo: discord.Role):
-    """Configura o cargo de streamer ao vivo"""
     manager.set_live_role(interaction.guild.id, cargo.id)
     await interaction.response.send_message(
         f"✅ Cargo {cargo.mention} configurado. Será atribuído automaticamente.",
         ephemeral=True
     )
 
-@app_commands.command(name="configurar_permissao", description="Definir quem pode gerenciar streamers")
+@app_commands.command(name="configurar_permissao", description="Definir cargo de permissão")
 @app_commands.default_permissions(administrator=True)
 async def configurar_permissao(interaction: discord.Interaction, cargo: discord.Role):
-    """Configura o cargo de permissão"""
     manager.set_permission_role(interaction.guild.id, cargo.id)
     await interaction.response.send_message(
         f"✅ Cargo {cargo.mention} agora pode gerenciar streamers.",
@@ -172,21 +174,33 @@ async def configurar_permissao(interaction: discord.Interaction, cargo: discord.
     )
 
 # ==============================================================================
-# 5. SISTEMA DE MONITORAMENTO
+# 6. SISTEMA DE MONITORAMENTO
 # ==============================================================================
 async def check_live_streams():
     await bot.wait_until_ready()
     while not bot.is_closed():
         try:
-            # Lógica para verificar canais ao vivo
-            # (Implementação similar à anterior)
-            pass
+            youtube_ids = list(manager.data['users'].values())
+            # Implementação da verificação de canais ao vivo
+            # ...
+            await asyncio.sleep(POLLING_INTERVAL)
         except Exception as e:
-            logger.error(f"Falha na varredura: {e}")
-        await asyncio.sleep(POLLING_INTERVAL)
+            logger.error(f"Erro na verificação: {e}")
 
 # ==============================================================================
-# 6. INICIALIZAÇÃO
+# 7. SERVIDOR FLASK PARA KEEP-ALIVE
+# ==============================================================================
+app = Flask(__name__)
+
+@app.route('/health')
+def health_check():
+    return "T-1000 Operational", 200
+
+def run_flask():
+    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 8080)), debug=False, use_reloader=False)
+
+# ==============================================================================
+# 8. INICIALIZAÇÃO
 # ==============================================================================
 @bot.event
 async def on_ready():
@@ -195,9 +209,28 @@ async def on_ready():
         type=discord.ActivityType.watching,
         name="streamers da resistência"
     ))
+    try:
+        synced = await bot.tree.sync()
+        logger.info(f"Comandos sincronizados: {len(synced)}")
+    except Exception as e:
+        logger.error(f"Erro ao sincronizar comandos: {e}")
     bot.loop.create_task(check_live_streams())
 
 if __name__ == '__main__':
-    flask_thread = Thread(target=lambda: Flask(__name__).run(port=8080), daemon=True)
+    # Verificação de variáveis críticas
+    required_vars = ['DISCORD_TOKEN', 'GITHUB_TOKEN', 'GITHUB_REPO']
+    missing = [var for var in required_vars if not os.getenv(var)]
+    if missing:
+        logger.critical(f"Variáveis faltando: {missing}")
+        exit(1)
+
+    # Inicia Flask em thread separada
+    flask_thread = Thread(target=run_flask, daemon=True)
     flask_thread.start()
-    bot.run(os.getenv('DISCORD_TOKEN'))
+
+    # Inicia o bot
+    try:
+        bot.run(os.getenv('DISCORD_TOKEN'))
+    except discord.errors.LoginFailure:
+        logger.critical("Token do Discord inválido!")
+        exit(1)
