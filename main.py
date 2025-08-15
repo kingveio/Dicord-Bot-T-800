@@ -5,6 +5,8 @@ import logging
 import asyncio
 import requests
 from threading import Thread
+# Desativa funcionalidades de voz, se a variável de ambiente não estiver presente
+os.environ.setdefault('DISCORD_VOICE', '0')
 
 # ==============================================================================
 # 1. IMPORTAÇÕES DE BIBLIOTECAS
@@ -18,9 +20,6 @@ from flask import Flask
 # ==============================================================================
 # 2. CONFIGURAÇÃO INICIAL
 # ==============================================================================
-
-# Desativa funcionalidades de voz, se a variável de ambiente não estiver presente
-os.environ.setdefault('DISCORD_VOICE', '0')
 
 # Configuração de logging para um melhor rastreamento de erros
 logging.basicConfig(
