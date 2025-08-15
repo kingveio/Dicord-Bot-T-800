@@ -8,6 +8,8 @@ services:
       pip install -r requirements.txt
     startCommand: python main.py
     envVars:
+      - key: DISCORD_VOICE
+        value: "0"  # Isso desativa completamente o módulo de voz
       - key: DISCORD_TOKEN
         sync: false
       - key: YOUTUBE_API_KEY
