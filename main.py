@@ -6,9 +6,7 @@ import asyncio
 import requests
 from threading import Thread
 
-# ==============================================================================
-# 1. IMPORTAÇÕES DE BIBLIOTECAS
-# ==============================================================================
+# Importações de bibliotecas
 from github import Github
 import discord
 from discord.ext import commands
@@ -16,7 +14,7 @@ from discord import app_commands
 from flask import Flask
 
 # ==============================================================================
-# 2. CONFIGURAÇÃO INICIAL
+# 1. CONFIGURAÇÃO INICIAL
 # ==============================================================================
 
 # Desativa funcionalidades de voz, se a variável de ambiente não estiver presente
