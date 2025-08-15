@@ -2,16 +2,16 @@ services:
   - type: web
     name: seu-bot-discord
     runtime: python
-    pythonVersion: "3.11.7"  # Versão estável do Python
+    pythonVersion: "3.11.7"
     buildCommand: |
       python -m pip install --upgrade pip
       pip install -r requirements.txt
     startCommand: python main.py
     envVars:
       - key: DISCORD_VOICE
-        value: "0"  # ✅ Desativa módulos de voz do discord.py
+        value: "0"  # Força desativação no nível do sistema
       - key: DISCORD_TOKEN
-        sync: false  # Seguro (não sincroniza com o repositório)
+        sync: false
       - key: YOUTUBE_API_KEY
         sync: false
       - key: GITHUB_TOKEN
