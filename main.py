@@ -18,7 +18,7 @@ from discord import app_commands
 from flask import Flask
 
 # ==============================================================================
-# 2. CONFIGURAÇÕES GERAIS (DEVE VIR ANTES DA VERIFICAÇÃO DO TOKEN)
+# 2. CONFIGURAÇÕES GERAIS
 # ==============================================================================
 logging.basicConfig(
     level=logging.INFO,
@@ -26,7 +26,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger('T-1000')
 
-# Verificação do token DEVE VIR DEPOIS do logger estar configurado
+# Verificação do token (AGORA COM LOGGER CONFIGURADO)
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 if not DISCORD_TOKEN or not DISCORD_TOKEN.startswith('MT'):
     logger.critical("TOKEN INVÁLIDO! Verifique:")
@@ -34,7 +34,6 @@ if not DISCORD_TOKEN or not DISCORD_TOKEN.startswith('MT'):
     logger.critical("2. Se a variável se chama EXATAMENTE 'DISCORD_TOKEN'")
     logger.critical("3. Se não há espaços extras no valor")
     exit(1)
-
 
 YOUTUBE_API_URL = 'https://www.googleapis.com/youtube/v3'
 POLLING_INTERVAL = 300  # 5 minutos entre verificações
@@ -191,8 +190,32 @@ async def check_live_streams():
     while not bot.is_closed():
         try:
             youtube_ids = list(manager.data['users'].values())
-            # Implementação da verificação de canais ao vivo
-            # ...
+            online_channels = set()  # Implemente sua lógica de verificação aqui
+            
+            for guild in bot.guilds:
+                live_role_id = manager.get_live_role(str(guild.id))
+                if not live_role_id:
+                    continue
+                
+                live_role = guild.get_role(int(live_role_id))
+                if not live_role:
+                    continue
+                
+                for discord_id, yt_id in manager.data['users'].items():
+                    try:
+                        member = await guild.fetch_member(int(discord_id))
+                        is_live = yt_id in online_channels
+                        has_role = live_role in member.roles
+                        
+                        if is_live and not has_role:
+                            await member.add_roles(live_role)
+                            logger.info(f"Cargo adicionado para {member.display_name}")
+                        elif not is_live and has_role:
+                            await member.remove_roles(live_role)
+                            logger.info(f"Cargo removido de {member.display_name}")
+                    except Exception as e:
+                        logger.error(f"Erro ao atualizar cargo: {e}")
+            
             await asyncio.sleep(POLLING_INTERVAL)
         except Exception as e:
             logger.error(f"Erro na verificação: {e}")
@@ -227,15 +250,6 @@ async def on_ready():
     bot.loop.create_task(check_live_streams())
 
 if __name__ == '__main__':
-    # Verificação rigorosa do token
-    DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
-    if not DISCORD_TOKEN or not DISCORD_TOKEN.startswith('MT'):
-        logger.critical("TOKEN INVÁLIDO! Verifique:")
-        logger.critical("1. Se o token está correto no Render")
-        logger.critical("2. Se a variável se chama EXATAMENTE 'DISCORD_TOKEN'")
-        logger.critical("3. Se não há espaços extras no valor")
-        exit(1)
-
     flask_thread = Thread(target=run_flask, daemon=True)
     flask_thread.start()
     
