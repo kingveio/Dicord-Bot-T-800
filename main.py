@@ -1,5 +1,17 @@
 # -*- coding: utf-8 -*-
 import os
+os.environ["DISCORD_VOICE"] = "0"  # Força desativação ANTES de tudo
+os.environ["DISCORD_NO_VOICE"] = "1"  # Redundância extra
+
+# Bloqueia módulos de áudio
+try:
+    import sys
+    sys.modules['audioop'] = None
+    import discord.opus
+    discord.opus._load_default = lambda: False
+except ImportError:
+    pass
+
 import json
 import logging
 import asyncio
@@ -15,14 +27,6 @@ from flask import Flask
 # ==============================================================================
 # 1. CONFIGURAÇÃO INICIAL
 # ==============================================================================
-
-# Força a desativação de voz para evitar o erro 'audioop'
-os.environ.setdefault('DISCORD_VOICE', '0')
-try:
-    import discord.opus
-    discord.opus.is_loaded = lambda: False
-except ImportError:
-    pass
 
 # Configuração de logging
 logging.basicConfig(
