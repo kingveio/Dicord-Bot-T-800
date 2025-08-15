@@ -16,6 +16,9 @@ from flask import Flask
 # 1. CONFIGURAÇÃO INICIAL
 # ==============================================================================
 
+# Desativa funcionalidades de voz, se a variável de ambiente não estiver presente
+os.environ.setdefault('DISCORD_VOICE', '0')
+
 # Configuração de logging
 logging.basicConfig(
     level=logging.INFO,
