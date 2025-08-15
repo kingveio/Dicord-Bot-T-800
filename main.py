@@ -2,6 +2,11 @@
 # ==============================================================================
 # 1. CONFIGURAÇÃO INICIAL - T-1000 SYSTEMS
 # ==============================================================================
+# Verificação do token
+DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
+if not DISCORD_TOKEN or len(DISCORD_TOKEN) < 10:
+    logger.critical("Token do Discord não configurado ou inválido!")
+    exit(1)
 import os
 os.environ["DISCORD_VOICE"] = "0"  # Desativa módulos de voz
 
@@ -217,20 +222,21 @@ async def on_ready():
     bot.loop.create_task(check_live_streams())
 
 if __name__ == '__main__':
-    # Verificação de variáveis críticas
-    required_vars = ['DISCORD_TOKEN', 'GITHUB_TOKEN', 'GITHUB_REPO']
-    missing = [var for var in required_vars if not os.getenv(var)]
-    if missing:
-        logger.critical(f"Variáveis faltando: {missing}")
+    # Verificação rigorosa do token
+    DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
+    if not DISCORD_TOKEN or not DISCORD_TOKEN.startswith('MT'):
+        logger.critical("TOKEN INVÁLIDO! Verifique:")
+        logger.critical("1. Se o token está correto no Render")
+        logger.critical("2. Se a variável se chama EXATAMENTE 'DISCORD_TOKEN'")
+        logger.critical("3. Se não há espaços extras no valor")
         exit(1)
 
-    # Inicia Flask em thread separada
     flask_thread = Thread(target=run_flask, daemon=True)
     flask_thread.start()
-
-    # Inicia o bot
+    
     try:
-        bot.run(os.getenv('DISCORD_TOKEN'))
-    except discord.errors.LoginFailure:
-        logger.critical("Token do Discord inválido!")
+        bot.run(DISCORD_TOKEN)
+    except discord.errors.LoginFailure as e:
+        logger.critical(f"FALHA NO LOGIN: {e}")
+        logger.critical("O token pode ter sido resetado ou está incorreto")
         exit(1)
