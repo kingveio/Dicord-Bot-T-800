@@ -2,11 +2,6 @@
 # ==============================================================================
 # 1. CONFIGURAÇÃO INICIAL - T-1000 SYSTEMS
 # ==============================================================================
-# Verificação do token
-DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
-if not DISCORD_TOKEN or len(DISCORD_TOKEN) < 10:
-    logger.critical("Token do Discord não configurado ou inválido!")
-    exit(1)
 import os
 os.environ["DISCORD_VOICE"] = "0"  # Desativa módulos de voz
 
@@ -23,13 +18,23 @@ from discord import app_commands
 from flask import Flask
 
 # ==============================================================================
-# 2. CONFIGURAÇÕES GERAIS
+# 2. CONFIGURAÇÕES GERAIS (DEVE VIR ANTES DA VERIFICAÇÃO DO TOKEN)
 # ==============================================================================
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - T-1000 - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger('T-1000')
+
+# Verificação do token DEVE VIR DEPOIS do logger estar configurado
+DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
+if not DISCORD_TOKEN or not DISCORD_TOKEN.startswith('MT'):
+    logger.critical("TOKEN INVÁLIDO! Verifique:")
+    logger.critical("1. Se o token está correto no Render")
+    logger.critical("2. Se a variável se chama EXATAMENTE 'DISCORD_TOKEN'")
+    logger.critical("3. Se não há espaços extras no valor")
+    exit(1)
+
 
 YOUTUBE_API_URL = 'https://www.googleapis.com/youtube/v3'
 POLLING_INTERVAL = 300  # 5 minutos entre verificações
