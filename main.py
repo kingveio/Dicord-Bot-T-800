@@ -10,7 +10,7 @@ from threading import Thread
 # 1. IMPORTAÇÕES DE BIBLIOTECAS
 # ==============================================================================
 from github import Github
-import discord
+import nextcord as discord
 from discord.ext import commands
 from discord import app_commands
 from flask import Flask
