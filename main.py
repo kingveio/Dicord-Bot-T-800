@@ -5,12 +5,7 @@ import logging
 import asyncio
 import requests
 from threading import Thread
-# Desativa funcionalidades de voz, se a variável de ambiente não estiver presente
-os.environ.setdefault('DISCORD_VOICE', '0')
-
-# ==============================================================================
-# 1. IMPORTAÇÕES DE BIBLIOTECAS
-# ==============================================================================
+import re
 from github import Github
 import discord
 from discord.ext import commands
@@ -18,30 +13,42 @@ from discord import app_commands
 from flask import Flask
 
 # ==============================================================================
-# 2. CONFIGURAÇÃO INICIAL
+# 1. CONFIGURAÇÃO INICIAL
 # ==============================================================================
 
-# Configuração de logging para um melhor rastreamento de erros
+# Força a desativação de voz para evitar o erro 'audioop'
+os.environ.setdefault('DISCORD_VOICE', '0')
+try:
+    import discord.opus
+    discord.opus.is_loaded = lambda: False
+except ImportError:
+    pass
+
+# Configuração de logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# Constantes da API do YouTube e do bot
+# Constantes da API
 YOUTUBE_API_URL = 'https://www.googleapis.com/youtube/v3'
 POLLING_INTERVAL = 300  # 5 minutos
-KEEP_ALIVE_INTERVAL = 240  # 4 minutos (menor que o intervalo do Render)
+KEEP_ALIVE_INTERVAL = 240  # 4 minutos
+MAX_CHANNELS_PER_REQUEST = 50
 
 # ==============================================================================
-# 3. FUNÇÕES E CLASSES PRINCIPAIS
+# 2. FUNÇÕES AUXILIARES
 # ==============================================================================
+
+def is_valid_youtube_id(channel_id):
+    """Valida o formato de um ID de canal do YouTube"""
+    if not channel_id or not isinstance(channel_id, str):
+        return False
+    return re.match(r'^[A-Za-z]{2}[A-Za-z0-9_-]{22}$', channel_id) is not None
 
 def verify_github_credentials():
-    """
-    Verifica se as variáveis de ambiente do GitHub estão definidas e se a
-    conexão com o repositório é bem-sucedida.
-    """
+    """Verifica as credenciais do GitHub"""
     required_vars = ['GITHUB_TOKEN', 'GITHUB_REPO']
     missing = [var for var in required_vars if not os.getenv(var)]
     
@@ -77,8 +84,8 @@ class StreamerManager:
         except Exception:
             logger.info("Criando novo arquivo streamers.json")
             initial_data = {
-                'users': {},  # {discord_id: youtube_channel_id}
-                'servers': {} # {server_id: {live_role: role_id, permission_role: role_id}}
+                'users': {},
+                'servers': {}
             }
             self._save_data(initial_data)
             return initial_data
@@ -98,7 +105,6 @@ class StreamerManager:
         except Exception as e:
             logger.error(f"Erro ao salvar dados: {e}")
             try:
-                # Tenta criar o arquivo se o erro foi por não existir
                 self.repo.create_file(
                     self.file_path,
                     "Criação do arquivo streamers.json",
@@ -111,12 +117,14 @@ class StreamerManager:
     def add_streamer(self, discord_user_id, youtube_channel_id):
         """Adiciona um novo streamer ao registro."""
         youtube_channel_id = youtube_channel_id.strip()
+        if not is_valid_youtube_id(youtube_channel_id):
+            return False, "ID do canal do YouTube inválido."
         if str(discord_user_id) in self.data['users']:
-            return False
+            return False, "Usuário já tem um canal vinculado."
             
         self.data['users'][str(discord_user_id)] = youtube_channel_id
         self._save_data()
-        return True
+        return True, "Streamer adicionado com sucesso."
 
     def remove_streamer(self, identifier):
         """Remove um streamer por ID do Discord ou ID do canal do YouTube."""
@@ -125,15 +133,15 @@ class StreamerManager:
         if identifier in self.data['users']:
             self.data['users'].pop(identifier)
             self._save_data()
-            return True
+            return True, "Streamer removido com sucesso."
             
         for user_id, youtube_id in list(self.data['users'].items()):
             if youtube_id.lower() == identifier.lower():
                 self.data['users'].pop(user_id)
                 self._save_data()
-                return True
+                return True, "Streamer removido com sucesso."
                 
-        return False
+        return False, "Nenhum streamer encontrado."
 
     def set_live_role(self, server_id, role_id):
         """Configura o cargo 'ao vivo' para um servidor."""
@@ -165,9 +173,13 @@ class StreamerManager:
             
         member_roles = [str(role.id) for role in interaction.user.roles]
         return permission_role_id in member_roles
+        
+    def get_all_streamers(self):
+        """Retorna todos os streamers cadastrados."""
+        return self.data['users']
 
 # ==============================================================================
-# 4. CONFIGURAÇÃO E INICIALIZAÇÃO DO BOT
+# 3. CONFIGURAÇÃO E INICIALIZAÇÃO DO BOT
 # ==============================================================================
 
 # Verifica as credenciais do GitHub antes de iniciar o bot
@@ -198,7 +210,7 @@ def run_flask():
     app.run(host='0.0.0.0', port=port)
 
 # ==============================================================================
-# 5. COMANDOS DO BOT
+# 4. COMANDOS DO BOT
 # ==============================================================================
 
 @app_commands.command(name="youtube_canal", description="Vincula um canal do YouTube a um membro do Discord.")
@@ -207,9 +219,6 @@ async def youtube_canal(interaction: discord.Interaction,
                        usuario_do_discord: discord.Member):
     """
     Comando para adicionar um streamer do YouTube.
-    Parâmetros:
-    - id_do_canal: ID do canal do YouTube (ex: UCyQxQ3sKq3a... ).
-    - usuario_do_discord: O membro do Discord a ser vinculado.
     """
     if not interaction.user.guild_permissions.administrator and not manager.check_permission(interaction):
         await interaction.response.send_message(
@@ -218,24 +227,19 @@ async def youtube_canal(interaction: discord.Interaction,
         )
         return
 
-    if manager.add_streamer(str(usuario_do_discord.id), id_do_canal):
-        await interaction.response.send_message(
-            f"✅ Canal do YouTube com ID **{id_do_canal}** vinculado a {usuario_do_discord.mention}. Missão cumprida.",
-            ephemeral=True
-        )
-    else:
-        await interaction.response.send_message(
-            f"⚠️ Acesso negado. O usuário {usuario_do_discord.mention} já tem um canal vinculado. Eu tenho as coordenadas.",
-            ephemeral=True
-        )
+    success, message = manager.add_streamer(str(usuario_do_discord.id), id_do_canal)
+    await interaction.response.send_message(
+        f"✅ {message.replace('Streamer adicionado com sucesso.', f'Canal do YouTube com ID **{id_do_canal}** vinculado a {usuario_do_discord.mention}. Missão cumprida.')}"
+        if success
+        else f"⚠️ {message.replace('Usuário já tem um canal vinculado.', 'Acesso negado. O usuário já tem um canal vinculado. Eu tenho as coordenadas.')}",
+        ephemeral=True
+    )
 
 @app_commands.command(name="remover_streamer", description="Remove um streamer vinculado. Hasta la vista, baby.")
 async def remove_streamer(interaction: discord.Interaction,
                           identificador: str):
     """
     Comando para remover um streamer por ID do Discord ou ID do canal do YouTube.
-    Parâmetros:
-    - identificador: O ID do Discord ou o ID do canal do YouTube.
     """
     if not interaction.user.guild_permissions.administrator and not manager.check_permission(interaction):
         await interaction.response.send_message(
@@ -244,24 +248,19 @@ async def remove_streamer(interaction: discord.Interaction,
         )
         return
 
-    if manager.remove_streamer(identificador):
-        await interaction.response.send_message(
-            "✅ Streamer removido com sucesso. Hasta la vista, baby.",
-            ephemeral=True
-        )
-    else:
-        await interaction.response.send_message(
-            "⚠️ Nenhum alvo encontrado. Verificação de dados falhou.",
-            ephemeral=True
-        )
+    success, message = manager.remove_streamer(identificador)
+    await interaction.response.send_message(
+        f"✅ {message.replace('Streamer removido com sucesso.', 'Streamer removido com sucesso. Hasta la vista, baby.')}"
+        if success
+        else f"⚠️ {message.replace('Nenhum streamer encontrado.', 'Nenhum alvo encontrado. Verificação de dados falhou.')}",
+        ephemeral=True
+    )
 
 @app_commands.command(name="configurar_cargo", description="Define o cargo para streamers ao vivo. Resistência ativada.")
 @app_commands.default_permissions(administrator=True)
 async def set_live_role(interaction: discord.Interaction, cargo: discord.Role):
     """
     Comando para configurar o cargo que será dado aos streamers ao vivo.
-    Parâmetros:
-    - cargo: O cargo a ser definido.
     """
     manager.set_live_role(str(interaction.guild.id), cargo.id)
     await interaction.response.send_message(
@@ -274,8 +273,6 @@ async def set_live_role(interaction: discord.Interaction, cargo: discord.Role):
 async def set_permission_role(interaction: discord.Interaction, cargo: discord.Role):
     """
     Comando para configurar o cargo de permissão.
-    Parâmetros:
-    - cargo: O cargo a ser definido.
     """
     manager.set_permission_role(str(interaction.guild.id), cargo.id)
     await interaction.response.send_message(
@@ -283,10 +280,33 @@ async def set_permission_role(interaction: discord.Interaction, cargo: discord.R
         ephemeral=True
     )
 
+@app_commands.command(name="listar_streamers", description="Lista todos os streamers cadastrados.")
+async def list_streamers(interaction: discord.Interaction):
+    """
+    Comando para listar todos os streamers cadastrados.
+    """
+    streamers = manager.get_all_streamers()
+    if not streamers:
+        await interaction.response.send_message("Não há streamers cadastrados.", ephemeral=True)
+        return
+
+    response_message = "**Streamers Cadastrados:**\n"
+    for discord_id, youtube_id in streamers.items():
+        try:
+            member = interaction.guild.get_member(int(discord_id))
+            if member:
+                response_message += f"• **{member.display_name}**: Canal com ID `{youtube_id}`\n"
+            else:
+                response_message += f"• **Usuário não encontrado**: Canal com ID `{youtube_id}`\n"
+        except (ValueError, TypeError):
+            response_message += f"• **Usuário com ID {discord_id}**: Canal com ID `{youtube_id}`\n"
+            
+    await interaction.response.send_message(response_message, ephemeral=True)
+
 # Fim dos codigos dos comandos
 
 # ==============================================================================
-# 6. ROTINAS E LOOPS DE BACKGROUND
+# 5. ROTINAS E LOOPS DE BACKGROUND
 # ==============================================================================
 
 async def check_live_streams():
@@ -352,13 +372,12 @@ async def keep_alive():
 # Fim das rotinas e loops de background
 
 # ==============================================================================
-# 7. FUNÇÕES AUXILIARES DO YOUTUBE
+# 6. FUNÇÕES AUXILIARES DO YOUTUBE
 # ==============================================================================
 
 def get_youtube_status(channel_ids):
     """
     Verifica quais canais do YouTube estão online.
-    Utiliza o endpoint 'search' com eventType='live'.
     """
     if not channel_ids:
         return set()
@@ -398,7 +417,7 @@ def get_youtube_status(channel_ids):
 # Fim das funções auxiliares do YouTube
 
 # ==============================================================================
-# 8. INÍCIO DO PROGRAMA
+# 7. INÍCIO DO PROGRAMA
 # ==============================================================================
 
 @bot.event
@@ -421,6 +440,7 @@ bot.tree.add_command(youtube_canal)
 bot.tree.add_command(remove_streamer)
 bot.tree.add_command(set_live_role)
 bot.tree.add_command(set_permission_role)
+bot.tree.add_command(list_streamers)
 
 if __name__ == '__main__':
     # Inicia o servidor Flask em um thread separado
