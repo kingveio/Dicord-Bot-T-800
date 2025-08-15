@@ -17,7 +17,7 @@ from flask import Flask
 # ==============================================================================
 
 # Desativa funcionalidades de voz, se a variável de ambiente não estiver presente
-os.environ.setdefault('DISCORD_VOICE', '0')
+os.environ["DISCORD_VOICE"] = "0"  # Desativa completamente funcionalidades de voz
 
 # Configuração de logging
 logging.basicConfig(
