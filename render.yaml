@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: seu-bot-discord
+    runtime: python
+    pythonVersion: "3.11.7"  # Forçar versão compatível
+    buildCommand: |
+      pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: PORT
+        value: "8080"
