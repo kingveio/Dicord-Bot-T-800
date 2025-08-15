@@ -9,7 +9,9 @@ services:
     startCommand: python main.py
     envVars:
       - key: DISCORD_VOICE
-        value: "0"  # Força desativação no nível do sistema
+        value: "0"
+      - key: PYTHON_VERSION
+        value: "3.11.7"
       - key: DISCORD_TOKEN
         sync: false
       - key: YOUTUBE_API_KEY
