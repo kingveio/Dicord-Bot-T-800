@@ -27,12 +27,13 @@ logging.basicConfig(
 logger = logging.getLogger('T-1000')
 
 # Verificação do token (AGORA COM LOGGER CONFIGURADO)
-DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
+DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')  # Isso está CORRETO
+
 if not DISCORD_TOKEN or not DISCORD_TOKEN.startswith('MT'):
-    logger.critical("TOKEN INVÁLIDO! Verifique:")
-    logger.critical("1. Se o token está correto no Render")
-    logger.critical("2. Se a variável se chama EXATAMENTE 'DISCORD_TOKEN'")
-    logger.critical("3. Se não há espaços extras no valor")
+    logger.critical("❌ Token inválido ou não encontrado!")
+    logger.critical("Verifique no Render:")
+    logger.critical("1. Se a variável se chama EXATAMENTE 'DISCORD_TOKEN'")
+    logger.critical("2. Se o token começa com 'MT' e tem ~59 caracteres")
     exit(1)
 
 YOUTUBE_API_URL = 'https://www.googleapis.com/youtube/v3'
