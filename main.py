@@ -179,12 +179,17 @@ async def monitorar_streams():
 # ==============================================================================
 app = Flask(__name__)
 
-@app.route('/')
-def status():
-    return "Sistemas operacionais. Nenhum problema.", 200
+@app.route('/')  # Rota principal
+def home():
+    return "Sistemas da Skynet operacionais. Nenhum problema.", 200
+
+@app.route('/health')  # Rota de health check
+def health_check():
+    return "T-1000 operacional. Sistemas normais.", 200
 
 def executar_servidor():
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', 8080)))
+
 
 # ==============================================================================
 # 8. ATIVAÇÃO DO T-1000 - SEQUÊNCIA DE INICIALIZAÇÃO
