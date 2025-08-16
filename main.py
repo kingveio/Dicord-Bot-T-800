@@ -10,7 +10,7 @@ import requests
 from threading import Thread
 from github import Github
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 from flask import Flask, jsonify
 import traceback
@@ -24,7 +24,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger('T-1000')
 
-# Verifica o token do Discord
+YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
+if not YOUTUBE_API_KEY:
+    logger.critical("❌ CHAVE DA API DO YOUTUBE NÃO ENCONTRADA")
+    exit(1)
+
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 if not DISCORD_TOKEN or not DISCORD_TOKEN.startswith('MT'):
     logger.critical("❌ TOKEN INVÁLIDO - Verifique DISCORD_TOKEN no Render")
@@ -169,7 +173,71 @@ def executar_servidor():
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', 8080)))
 
 # ==============================================================================
-# 7. INICIALIZAÇÃO DO BOT
+# 7. MONITORAMENTO DE LIVES (Lógica Principal)
+# ==============================================================================
+async def verificar_live(canal_youtube_id):
+    """Verifica se um canal do YouTube está transmitindo ao vivo."""
+    try:
+        params = {
+            'part': 'snippet,liveStreamingDetails',
+            'forUsername': canal_youtube_id,
+            'type': 'video',
+            'eventType': 'live',
+            'key': YOUTUBE_API_KEY
+        }
+        
+        response = requests.get(f'{YOUTUBE_API_URL}/search', params=params)
+        response.raise_for_status()
+        
+        data = response.json()
+        
+        if 'items' in data and data['items']:
+            live_info = data['items'][0]['liveStreamingDetails']
+            return True, f"https://www.youtube.com/watch?v={live_info['actualStartTime']}"
+    except requests.exceptions.RequestException as e:
+        logger.error(f"❌ ERRO AO ACESSAR API DO YOUTUBE: {e}")
+    except Exception as e:
+        logger.error(f"❌ ERRO DESCONHECIDO NO MONITORAMENTO: {e}")
+
+    return False, None
+
+@tasks.loop(seconds=POLLING_INTERVAL)
+async def monitorar_streamers():
+    """Tarefa que verifica se os streamers estão ao vivo e atualiza o cargo."""
+    logger.info("🤖 Iniciando verificação de lives...")
+    streamers = skynet.dados['usuarios']
+    
+    for discord_id, youtube_canal_id in streamers.items():
+        esta_ao_vivo, live_url = await verificar_live(youtube_canal_id)
+        
+        membro = bot.get_user(int(discord_id))
+        if not membro:
+            logger.warning(f"⚠️ Membro do Discord não encontrado: {discord_id}")
+            continue
+
+        for guild in bot.guilds:
+            if str(guild.id) in skynet.dados['servidores']:
+                cargo_id = skynet.dados['servidores'][str(guild.id)].get('cargo_live')
+                if cargo_id:
+                    cargo_live = guild.get_role(int(cargo_id))
+                    if cargo_live:
+                        if esta_ao_vivo:
+                            if cargo_live not in membro.roles:
+                                try:
+                                    await membro.add_roles(cargo_live, reason="Streamer ao vivo no YouTube")
+                                    logger.info(f"✅ Cargo de live adicionado para {membro.name}")
+                                except discord.Forbidden:
+                                    logger.error(f"❌ Sem permissão para adicionar cargo para {membro.name}")
+                        elif cargo_live in membro.roles:
+                            try:
+                                await membro.remove_roles(cargo_live, reason="Streamer encerrou a live")
+                                logger.info(f"✅ Cargo de live removido de {membro.name}")
+                            except discord.Forbidden:
+                                logger.error(f"❌ Sem permissão para remover cargo de {membro.name}")
+    logger.info("✅ Verificação de lives concluída.")
+    
+# ==============================================================================
+# 8. INICIALIZAÇÃO DO BOT
 # ==============================================================================
 @bot.event
 async def on_ready():
@@ -177,14 +245,14 @@ async def on_ready():
     await bot.tree.sync()
     await bot.change_presence(activity=discord.Activity(
         type=discord.ActivityType.watching,
-        name="Buscando alvos da resistência"  # ✅ TEXTO ALTERADO
+        name="Buscando alvos da resistência"
     ))
+    
+    monitorar_streamers.start()
 
 if __name__ == '__main__':
-    # Inicia o servidor Flask em segundo plano
     Thread(target=executar_servidor, daemon=True).start()
     
-    # Inicia o bot Discord
     try:
         bot.run(DISCORD_TOKEN)
     except Exception as e:
