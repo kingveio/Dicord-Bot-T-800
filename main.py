@@ -152,14 +152,24 @@ async def adicionar_youtube(interaction: discord.Interaction, nome_do_canal: str
     sucesso, mensagem = await skynet.adicionar_streamer(usuario.id, nome_do_canal)
     await interaction.followup.send(f"{mensagem}\n`Canal:` {nome_do_canal}\n`Usuário:` {usuario.mention}")
 
-@bot.tree.command(name="remover_canal", description="Remove um canal do monitoramento")
-async def remover_canal(interaction: discord.Interaction, id_alvo: str):
+@bot.tree.command(name="remover_canal", description="Remove um canal do monitoramento usando o nome do canal do YouTube")
+async def remover_canal(interaction: discord.Interaction, nome_do_canal: str):
     await interaction.response.defer(ephemeral=True)
     if not interaction.user.guild_permissions.administrator:
         await interaction.followup.send("⚠️ Acesso negado.")
         return
-    sucesso, mensagem = await skynet.remover_streamer(id_alvo)
-    await interaction.followup.send(f"{mensagem}\n`Alvo:` {id_alvo}")
+    
+    discord_id_alvo = None
+    for discord_id, youtube_username in skynet.dados['usuarios'].items():
+        if youtube_username.lower() == nome_do_canal.lower():
+            discord_id_alvo = discord_id
+            break
+
+    if discord_id_alvo:
+        sucesso, mensagem = await skynet.remover_streamer(discord_id_alvo)
+        await interaction.followup.send(f"{mensagem}\n`Canal:` {nome_do_canal}")
+    else:
+        await interaction.followup.send(f"⚠️ Canal '{nome_do_canal}' não encontrado na base de dados.")
 
 @bot.tree.command(name="configurar_cargo", description="Define o cargo para streams ao vivo")
 @app_commands.default_permissions(administrator=True)
