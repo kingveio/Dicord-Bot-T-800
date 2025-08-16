@@ -29,5 +29,4 @@ Os comandos de barra a seguir podem ser usados no Discord:
 * `main.py`: O código principal do bot, contendo a lógica de conexão com o Discord e o YouTube, além de gerenciar os comandos e as rotinas de verificação.
 * `streamers.json`: O "banco de dados" do bot, armazenado no GitHub, que guarda as informações dos streamers e as configurações de cargos por servidor.
 * `requirements.txt`: Lista todas as bibliotecas Python necessárias para o projeto.
-* `runtime.txt`: Especifica a versão do Python (`3.11.7`) a ser utilizada.
 * `render.yaml`: O arquivo de configuração para o serviço de hospedagem Render.
