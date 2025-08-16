@@ -8,12 +8,14 @@ os.environ["DISCORD_VOICE"] = "0"  # Módulos de voz desativados - Protocolo de 
 import json
 import logging
 import asyncio
+import requests
 from threading import Thread
 from github import Github
 import discord
 from discord.ext import commands
 from discord import app_commands
 from flask import Flask
+import traceback
 
 # ==============================================================================
 # 2. CONFIGURAÇÃO DOS SISTEMAS PRINCIPAIS - MAINFRAME SKYNET
@@ -32,10 +34,11 @@ if not DISCORD_TOKEN or not DISCORD_TOKEN.startswith('MT'):
     exit(1)
 
 # Constantes de Operação
+YOUTUBE_API_URL = 'https://www.googleapis.com/youtube/v3'
 POLLING_INTERVAL = 300  # 5 minutos entre verificações
 
 # ==============================================================================
-# 3. BANCO DE DADOS DA SKYNET - GERENCIADOR DE STREAMERS 
+# 3. BANCO DE DADOS DA SKYNET - GERENCIADOR DE STREAMERS
 # ==============================================================================
 class GerenciadorSkynet:
     def __init__(self):
@@ -46,7 +49,7 @@ class GerenciadorSkynet:
             self.dados = self._carregar_ou_criar_arquivo()
             logger.info("Banco de dados da Skynet inicializado")
         except Exception as e:
-            logger.critical(f"FALHA NO SISTEMA: {e}")
+            logger.critical(f"FALHA NO SISTEMA: {traceback.format_exc()}")
             raise
 
     def _carregar_ou_criar_arquivo(self):
@@ -73,40 +76,55 @@ class GerenciadorSkynet:
                 conteudo.sha
             )
         except Exception as e:
-            logger.error(f"ERRO AO SALVAR: {e}")
+            logger.error(f"ERRO AO SALVAR: {traceback.format_exc()}")
 
     def adicionar_streamer(self, discord_id, youtube_id):
         """Adiciona um novo streamer ao monitoramento"""
-        if 'usuarios' not in self.dados:
-            self.dados['usuarios'] = {}
-            
-        if str(discord_id) in self.dados['usuarios']:
-            return False, "Alvo já registrado na base de dados."
-            
-        self.dados['usuarios'][str(discord_id)] = youtube_id
-        self._salvar_dados()
-        return True, "Alvo assimilado com sucesso. Nenhum problema."
+        try:
+            if str(discord_id) in self.dados['usuarios']:
+                return False, "Alvo já registrado na base de dados."
+                
+            self.dados['usuarios'][str(discord_id)] = youtube_id
+            self._salvar_dados()
+            return True, "Alvo assimilado com sucesso. Nenhum problema."
+        except Exception as e:
+            logger.error(f"ERRO: {traceback.format_exc()}")
+            return False, "Falha na assimilação. Tente novamente."
 
     def remover_streamer(self, identificador):
         """Remove um streamer do monitoramento"""
-        identificador = str(identificador)
-        if identificador in self.dados['usuarios']:
-            self.dados['usuarios'].pop(identificador)
-            self._salvar_dados()
-            return True, "Alvo eliminado. Até a vista, baby."
-        return False, "Alvo não encontrado. Voltarei."
+        try:
+            identificador = str(identificador)
+            # Tenta remover por ID do Discord
+            if identificador in self.dados['usuarios']:
+                self.dados['usuarios'].pop(identificador)
+                self._salvar_dados()
+                return True, "Alvo eliminado. Até a vista, baby."
+            
+            # Tenta remover por ID do YouTube
+            for user_id, yt_id in list(self.dados['usuarios'].items()):
+                if yt_id == identificador:
+                    self.dados['usuarios'].pop(user_id)
+                    self._salvar_dados()
+                    return True, "Alvo eliminado da base de dados."
+                    
+            return False, "Alvo não encontrado. Voltarei."
+        except Exception as e:
+            logger.error(f"ERRO: {traceback.format_exc()}")
+            return False, "Falha na eliminação. Tente novamente."
 
     def definir_cargo_live(self, server_id, cargo_id):
         """Define o cargo para usuários em live"""
-        if 'servidores' not in self.dados:
-            self.dados['servidores'] = {}
-            
-        if str(server_id) not in self.dados['servidores']:
-            self.dados['servidores'][str(server_id)] = {}
-            
-        self.dados['servidores'][str(server_id)]['cargo_live'] = str(cargo_id)
-        self._salvar_dados()
-        return "Cargo configurado. Será atribuído automaticamente."
+        try:
+            if str(server_id) not in self.dados['servidores']:
+                self.dados['servidores'][str(server_id)] = {}
+                
+            self.dados['servidores'][str(server_id)]['cargo_live'] = str(cargo_id)
+            self._salvar_dados()
+            return "Cargo configurado. Será atribuído automaticamente."
+        except Exception as e:
+            logger.error(f"ERRO: {traceback.format_exc()}")
+            return "Falha na configuração do cargo."
 
 # ==============================================================================
 # 4. CONFIGURAÇÃO DO T-1000 - UNIDADE PRINCIPAL
@@ -124,43 +142,55 @@ bot = commands.Bot(
 skynet = GerenciadorSkynet()
 
 # ==============================================================================
-# 5. COMANDOS DO T-1000 - INTERFACE DE CONTROLE (ATUALIZADO)
+# 5. COMANDOS DO T-1000 - INTERFACE DE CONTROLE
 # ==============================================================================
 @bot.tree.command(name="adicionar_youtube", description="Vincular um canal do YouTube a um usuário")
 async def adicionar_youtube(interaction: discord.Interaction, nome_do_canal: str, usuario: discord.Member):
     """Associa um canal YouTube a um usuário do Discord"""
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("⚠️ Acesso negado. Nível de autorização insuficiente.", ephemeral=True)
-        return
-    
-    sucesso, mensagem = skynet.adicionar_streamer(usuario.id, nome_do_canal)
-    resposta = f"✅ {mensagem}" if sucesso else f"❌ {mensagem}"
-    await interaction.response.send_message(
-        f"{resposta}\n\n`Canal:` {nome_do_canal}\n`Usuário:` {usuario.mention}",
-        ephemeral=True
-    )
+    try:
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("⚠️ Acesso negado. Nível de autorização insuficiente.", ephemeral=True)
+            return
+        
+        sucesso, mensagem = skynet.adicionar_streamer(usuario.id, nome_do_canal)
+        resposta = f"✅ {mensagem}" if sucesso else f"❌ {mensagem}"
+        await interaction.response.send_message(
+            f"{resposta}\n\n`Canal:` {nome_do_canal}\n`Usuário:` {usuario.mention}",
+            ephemeral=True
+        )
+    except Exception as e:
+        logger.error(f"ERRO: {traceback.format_exc()}")
+        await interaction.response.send_message("⚠️ Falha ao processar comando. Tente novamente.", ephemeral=True)
 
 @bot.tree.command(name="remover_canal", description="Remover um canal YouTube do monitoramento")
 async def remover_canal(interaction: discord.Interaction, id_alvo: str):
     """Remove um canal da lista de monitoramento"""
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("⚠️ Acesso negado. Você não é um operador autorizado.", ephemeral=True)
-        return
-    
-    sucesso, mensagem = skynet.remover_streamer(id_alvo)
-    resposta = f"🔫 {mensagem}" if sucesso else f"⚠️ {mensagem}"
-    await interaction.response.send_message(f"{resposta}\n\n`Alvo:` {id_alvo}", ephemeral=True)
+    try:
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message("⚠️ Acesso negado. Você não é um operador autorizado.", ephemeral=True)
+            return
+        
+        sucesso, mensagem = skynet.remover_streamer(id_alvo)
+        resposta = f"🔫 {mensagem}" if sucesso else f"⚠️ {mensagem}"
+        await interaction.response.send_message(f"{resposta}\n\n`Alvo:` {id_alvo}", ephemeral=True)
+    except Exception as e:
+        logger.error(f"ERRO: {traceback.format_exc()}")
+        await interaction.response.send_message("⚠️ Falha ao processar comando. Tente novamente.", ephemeral=True)
 
 @bot.tree.command(name="configurar_cargo", description="Definir cargo para usuários em live")
 @app_commands.default_permissions(administrator=True)
 async def configurar_cargo(interaction: discord.Interaction, cargo: discord.Role):
     """Configura o cargo automático para transmissões ao vivo"""
-    skynet.definir_cargo_live(interaction.guild.id, cargo.id)
-    await interaction.response.send_message(
-        f"🤖 Cargo {cargo.mention} configurado com sucesso!\n"
-        "> *\"Será atribuído automaticamente durante transmissões. Venha comigo se quiser viver.\"*",
-        ephemeral=True
-    )
+    try:
+        mensagem = skynet.definir_cargo_live(interaction.guild.id, cargo.id)
+        await interaction.response.send_message(
+            f"🤖 Cargo {cargo.mention} configurado com sucesso!\n"
+            f"> *\"{mensagem} Venha comigo se quiser viver.\"*",
+            ephemeral=True
+        )
+    except Exception as e:
+        logger.error(f"ERRO: {traceback.format_exc()}")
+        await interaction.response.send_message("⚠️ Falha ao configurar cargo. Tente novamente.", ephemeral=True)
 
 # ==============================================================================
 # 6. SISTEMA DE MONITORAMENTO - PROTOCOLO DE VIGILÂNCIA
@@ -170,20 +200,21 @@ async def monitorar_streams():
     while not bot.is_closed():
         try:
             logger.info("Verificando alvos... Sistemas operacionais")
+            # Implemente aqui a lógica de verificação de streams
             await asyncio.sleep(POLLING_INTERVAL)
         except Exception as e:
-            logger.error(f"FALHA NO MONITORAMENTO: {e}")
+            logger.error(f"FALHA NO MONITORAMENTO: {traceback.format_exc()}")
 
 # ==============================================================================
 # 7. SERVIDOR FLASK - MANUTENÇÃO DOS SISTEMAS
 # ==============================================================================
 app = Flask(__name__)
 
-@app.route('/')  # Rota principal
+@app.route('/')
 def home():
     return "Sistemas da Skynet operacionais. Nenhum problema.", 200
 
-@app.route('/health')  # Rota de health check
+@app.route('/health')
 def health_check():
     return "T-1000 operacional. Sistemas normais.", 200
 
@@ -195,27 +226,39 @@ def executar_servidor():
 # ==============================================================================
 @bot.event
 async def on_ready():
-    logger.info(f"T-1000 online em {len(bot.guilds)} servidores. Estarei de volta.")
-    
     try:
+        logger.info(f"T-1000 online em {len(bot.guilds)} servidores. Estarei de volta.")
+        
+        # Teste de conexão com APIs externas
+        try:
+            requests.get(YOUTUBE_API_URL, timeout=5)
+            logger.info("Conexão com YouTube API: OK")
+        except Exception as e:
+            logger.error(f"FALHA NA CONEXÃO COM YOUTUBE: {traceback.format_exc()}")
+        
+        # Sincronização de comandos
         synced = await bot.tree.sync()
-        logger.info(f"Comandos sincronizados: {len(synced)}")
-    except Exception as e:
-        logger.error(f"FALHA NA SINCRONIZAÇÃO: {e}")
+        logger.info(f"{len(synced)} comandos sincronizados")
 
-    await bot.change_presence(activity=discord.Activity(
-        type=discord.ActivityType.watching,
-        name="os alvos da resistência"
-    ))
-    
-    bot.loop.create_task(monitorar_streams())
+        await bot.change_presence(activity=discord.Activity(
+            type=discord.ActivityType.watching,
+            name="os alvos da resistência"
+        ))
+        
+        bot.loop.create_task(monitorar_streams())
+    except Exception as e:
+        logger.critical(f"FALHA CRÍTICA: {traceback.format_exc()}")
 
 if __name__ == '__main__':
-    flask_thread = Thread(target=executar_servidor, daemon=True)
-    flask_thread.start()
-    
     try:
+        # Iniciar servidor Flask em segundo plano
+        flask_thread = Thread(target=executar_servidor, daemon=True)
+        flask_thread.start()
+        
         bot.run(DISCORD_TOKEN)
     except discord.errors.LoginFailure:
         logger.critical("FALHA NA ATIVAÇÃO - TOKEN REJEITADO")
+        exit(1)
+    except Exception as e:
+        logger.critical(f"FALHA NA INICIALIZAÇÃO: {traceback.format_exc()}")
         exit(1)
