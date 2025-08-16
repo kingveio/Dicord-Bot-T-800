@@ -1,3 +1,8 @@
+Entendido. Sinto muito por essa dificuldade.
+
+Para facilitar, aqui está o conteúdo do `README.md` em formato de texto simples. Você pode copiar este texto e colá-lo em um arquivo chamado `README.md` no seu repositório do GitHub.
+
+```markdown
 # 🤖 T-1000 - Monitor de Lives do YouTube para Discord
 
 !(https://placehold.co/800x400/2c2f33/ffffff?text=T-1000)
@@ -77,3 +82,61 @@ Para rodar o bot, você precisará configurar as credenciais necessárias em tr�
 1. Crie um novo repositório **privado** no seu GitHub para hospedar o código e o arquivo de dados.
 
 2. Crie um arquivo chamado `streamers.json` na raiz do repositório. O arquivo deve conter o seguinte JSON vazio:
+
+```
+
+{
+"usuarios": {},
+"servidores": {}
+}
+
+```
+
+3. Vá para as suas **Configurações do GitHub** > **Developer settings** > **Personal access tokens** > **Tokens (classic)**.
+
+4. Gere um novo token e dê a ele o escopo de `repo` para que o bot possa ler e escrever no arquivo JSON. **Copie o token, ele não será exibido novamente.**
+
+### Passo 4: Render (Hospedagem)
+
+1. Vá para o [Render](https://render.com/) e crie um novo **Web Service**.
+
+2. Selecione a opção de construir a partir de um repositório Git público ou privado.
+
+3. Conecte seu repositório do GitHub. O Render é capaz de se conectar a repositórios privados, então não há necessidade de torná-lo público.
+
+4. Configure o web service:
+
+* **Environment:** Python 3
+
+* **Build Command:** `pip install -r requirements.txt` (Assumindo que você tenha um arquivo `requirements.txt` com as dependências).
+
+* **Start Command:** `python seu_arquivo_principal.py` (Se o seu arquivo principal for diferente).
+
+5. Vá em **Environment** para adicionar suas variáveis de ambiente (Environment Variables) e cole as chaves que você copiou:
+
+* **`DISCORD_TOKEN`**: O token do seu bot do Discord.
+
+* **`YOUTUBE_API_KEY`**: A chave da API do YouTube.
+
+* **`GITHUB_TOKEN`**: O token de acesso pessoal que você criou no GitHub.
+
+* **`GITHUB_REPO`**: O nome do seu repositório no formato `seu-usuario/seu-repositorio`.
+
+6. **Importante:** O Render suspende serviços gratuitos após 15 minutos de inatividade. Para mantê-lo online, use um serviço como o [UptimeRobot](https://uptimerobot.com/) para pingar a URL do seu bot a cada 5 minutos.
+
+## 🛠️ Tecnologias Utilizadas
+
+* **Python:** Linguagem de programação principal.
+
+* **`discord.py`**: Biblioteca para interação com o Discord.
+
+* **`requests`**: Biblioteca para comunicação com a API do YouTube.
+
+* **`PyGithub`**: Biblioteca para manipulação de arquivos no GitHub.
+
+* **`Flask`**: Web server simples para o `health check`.
+
+## 📜 Licença
+
+Este projeto está licenciado sob a Licença MIT.
+```
