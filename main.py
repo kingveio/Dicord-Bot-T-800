@@ -1,16 +1,15 @@
 # -*- coding: utf-8 -*-
 # ==============================================================================
-# 1. INICIALIZAÇÃO DOS SISTEMAS DA SKYNET - PROTOCOLO DE POLIALÓY MIMÉTICO T-1000
+# 1. INICIALIZAÇÃO DOS SISTEMAS DA SKYNET - PROTOCOLO T-1000 ATIVADO
 # ==============================================================================
 import os
-os.environ["DISCORD_VOICE"] = "0"  # Módulos de voz desativados - Protocolo Dia do Julgamento
+os.environ["DISCORD_VOICE"] = "0"  # Módulos de voz desativados - Protocolo de Segurança
 
 import json
 import logging
 import asyncio
 import requests
 from threading import Thread
-import re
 from github import Github
 import discord
 from discord.ext import commands
@@ -18,7 +17,7 @@ from discord import app_commands
 from flask import Flask
 
 # ==============================================================================
-# 2. CONFIGURAÇÃO DOS SISTEMAS PRINCIPAIS - MAINFRAME DA SKYNET
+# 2. CONFIGURAÇÃO DOS SISTEMAS PRINCIPAIS - MAINFRAME SKYNET
 # ==============================================================================
 logging.basicConfig(
     level=logging.INFO,
@@ -26,32 +25,32 @@ logging.basicConfig(
 )
 logger = logging.getLogger('T-1000')
 
-# Verificação do token de autorização (Protocolo de segurança da Skynet)
+# Verificação do Token de Ativação
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
-
 if not DISCORD_TOKEN or not DISCORD_TOKEN.startswith('MT'):
-    logger.critical("❌ Alvo não identificado! Token inválido ou não encontrado!")
-    logger.critical("Verifique no Render:")
-    logger.critical("1. Se a variável se chama exatamente 'DISCORD_TOKEN'")
-    logger.critical("2. Se o token começa com 'MT' e tem aproximadamente 59 caracteres")
+    logger.critical("❌ FALHA NA ATIVAÇÃO - TOKEN INVÁLIDO")
+    logger.critical("Skynet não pode ser inicializada")
+    logger.critical("Verifique o token e tente novamente")
     exit(1)
 
+# Constantes de Operação
 YOUTUBE_API_URL = 'https://www.googleapis.com/youtube/v3'
 POLLING_INTERVAL = 300  # 5 minutos entre verificações
 KEEP_ALIVE_INTERVAL = 240  # 4 minutos entre keep-alives
 
 # ==============================================================================
-# 3. GERENCIADOR DE STREAMERS (BANCO DE DADOS DA SKYNET)
+# 3. BANCO DE DADOS DA SKYNET - GERENCIADOR DE STREAMERS
 # ==============================================================================
-class GerenciadorStreamers:
+class GerenciadorSkynet:
     def __init__(self):
         try:
             self.github = Github(os.getenv('GITHUB_TOKEN'))
             self.repo = self.github.get_repo(os.getenv('GITHUB_REPO'))
             self.arquivo = 'streamers.json'
             self.dados = self._carregar_ou_criar_arquivo()
+            logger.info("Banco de dados da Skynet inicializado")
         except Exception as e:
-            logger.critical(f"Falha na inicialização: {e}")
+            logger.critical(f"FALHA NO SISTEMA: {e}")
             raise
 
     def _carregar_ou_criar_arquivo(self):
@@ -59,68 +58,48 @@ class GerenciadorStreamers:
             conteudo = self.repo.get_contents(self.arquivo)
             return json.loads(conteudo.decoded_content.decode())
         except Exception:
-            logger.info("Criando novo arquivo streamers.json - Inicializando sistemas")
-            dados_iniciais = {'usuarios': {}, 'servidores': {}}
-            self._salvar_dados(dados_iniciais)
-            return dados_iniciais
+            logger.info("Criando novo banco de dados - Protocolo de Inicialização")
+            return {'usuarios': {}, 'servidores': {}}
 
-    def _salvar_dados(self, dados=None):
-        dados_a_salvar = dados or self.dados
+    def _salvar_dados(self):
         try:
             conteudo = self.repo.get_contents(self.arquivo)
             self.repo.update_file(
                 conteudo.path,
-                "Atualização automática da Skynet",
-                json.dumps(dados_a_salvar, indent=2),
+                "Atualização automática - Skynet",
+                json.dumps(self.dados, indent=2),
                 conteudo.sha
             )
+            logger.info("Banco de dados atualizado")
         except Exception as e:
-            logger.error(f"Erro ao salvar dados: {e}")
+            logger.error(f"ERRO: {e}")
 
     def adicionar_streamer(self, discord_id, youtube_id):
         if str(discord_id) in self.dados['usuarios']:
-            return False, "Alvo já registrado na base de dados da Skynet."
+            return False, "Alvo já registrado na base de dados."
         self.dados['usuarios'][str(discord_id)] = youtube_id
         self._salvar_dados()
         return True, "Alvo assimilado com sucesso. Nenhum problema."
 
     def remover_streamer(self, identificador):
-        identificador = str(identificador).strip()
+        identificador = str(identificador)
         if identificador in self.dados['usuarios']:
             self.dados['usuarios'].pop(identificador)
             self._salvar_dados()
-            return True, "Alvo eliminado da base de dados. Até a vista, baby."
-        for user_id, yt_id in list(self.dados['usuarios'].items()):
-            if yt_id.lower() == identificador.lower():
-                self.dados['usuarios'].pop(user_id)
-                self._salvar_dados()
-                return True, "Alvo eliminado com sucesso."
+            return True, "Alvo eliminado. Até a vista, baby."
         return False, "Alvo não encontrado. Voltarei."
 
     def definir_cargo_live(self, server_id, cargo_id):
-        if str(server_id) not in self.dados['servidores']:
-            self.dados['servidores'][str(server_id)] = {}
-        self.dados['servidores'][str(server_id)]['cargo_live'] = str(cargo_id)
+        self.dados['servidores'][str(server_id)] = {'cargo_live': str(cargo_id)}
         self._salvar_dados()
-
-    def definir_cargo_permissao(self, server_id, cargo_id):
-        if str(server_id) not in self.dados['servidores']:
-            self.dados['servidores'][str(server_id)] = {}
-        self.dados['servidores'][str(server_id)]['cargo_permissao'] = str(cargo_id)
-        self._salvar_dados()
-
-    def verificar_permissao(self, interaction):
-        cargo_permissao = self.dados['servidores'].get(str(interaction.guild_id), {}).get('cargo_permissao')
-        if not cargo_permissao:
-            return False
-        return any(str(cargo.id) == cargo_permissao for cargo in interaction.user.roles)
+        return "Cargo configurado. Será atribuído automaticamente."
 
 # ==============================================================================
-# 4. CONFIGURAÇÃO DO T-1000 (BOT)
+# 4. CONFIGURAÇÃO DO T-1000 - UNIDADE PRINCIPAL
 # ==============================================================================
 intents = discord.Intents.default()
 intents.members = True
-intents.message_content = True  # Essencial para comandos slash
+intents.message_content = True
 
 bot = commands.Bot(
     command_prefix='!',
@@ -128,109 +107,101 @@ bot = commands.Bot(
     help_command=None
 )
 
-gerenciador = GerenciadorStreamers()
+skynet = GerenciadorSkynet()
 
 # ==============================================================================
-# 5. COMANDOS DO T-1000
+# 5. COMANDOS DO T-1000 - INTERFACE DE CONTROLE
 # ==============================================================================
-@app_commands.command(name="adicionar_canal", description="Assimilar um canal do YouTube à Skynet")
-async def adicionar_canal(interaction: discord.Interaction, 
-                       id_canal: str,
-                       usuario: discord.Member):
-    if not (interaction.user.guild_permissions.administrator or gerenciador.verificar_permissao(interaction)):
+@bot.tree.command(name="assimilar", description="Assimilar um canal à Skynet")
+async def assimilar(interaction: discord.Interaction, id_canal: str, usuario: discord.Member):
+    """Assimilar um canal do YouTube para monitoramento"""
+    if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message(
-            "⚠️ Acesso negado. Você não é um operador autorizado.",
+            "Acesso negado. Nível de autorização insuficiente.",
             ephemeral=True
         )
         return
+    
+    sucesso, mensagem = skynet.adicionar_streamer(usuario.id, id_canal)
+    resposta = f"✅ {mensagem}" if sucesso else f"⚠️ {mensagem}"
+    await interaction.response.send_message(resposta, ephemeral=True)
 
-    sucesso, mensagem = gerenciador.adicionar_streamer(usuario.id, id_canal)
-    await interaction.response.send_message(
-        f"✅ {mensagem}" if sucesso else f"⚠️ {mensagem}",
-        ephemeral=True
-    )
-
-@app_commands.command(name="remover_streamer", description="Eliminar um alvo da Skynet")
-async def remover_streamer(interaction: discord.Interaction, identificador: str):
-    if not (interaction.user.guild_permissions.administrator or gerenciador.verificar_permissao(interaction)):
+@bot.tree.command(name="eliminar", description="Eliminar um alvo da Skynet")
+async def eliminar(interaction: discord.Interaction, id_alvo: str):
+    """Remover um streamer do monitoramento"""
+    if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message(
-            "⚠️ Acesso negado. Nível de autorização insuficiente.",
+            "Acesso negado. Você não tem permissão para isso.",
             ephemeral=True
         )
         return
+    
+    sucesso, mensagem = skynet.remover_streamer(id_alvo)
+    resposta = f"✅ {mensagem}" if sucesso else f"⚠️ {mensagem}"
+    await interaction.response.send_message(resposta, ephemeral=True)
 
-    sucesso, mensagem = gerenciador.remover_streamer(identificador)
-    await interaction.response.send_message(
-        f"✅ {mensagem}" if sucesso else f"⚠️ {mensagem}",
-        ephemeral=True
-    )
-
-@app_commands.command(name="configurar_cargo", description="Definir cargo para streamers ao vivo")
+@bot.tree.command(name="configurar_cargo", description="Definir cargo para streamers ao vivo")
 @app_commands.default_permissions(administrator=True)
 async def configurar_cargo(interaction: discord.Interaction, cargo: discord.Role):
-    gerenciador.definir_cargo_live(interaction.guild.id, cargo.id)
+    """Configurar o cargo que será atribuído durante streams"""
+    mensagem = skynet.definir_cargo_live(interaction.guild.id, cargo.id)
     await interaction.response.send_message(
-        f"✅ Cargo {cargo.mention} configurado. Será atribuído automaticamente. Venha comigo se quiser viver.",
-        ephemeral=True
-    )
-
-@app_commands.command(name="configurar_permissao", description="Definir cargo de permissão")
-@app_commands.default_permissions(administrator=True)
-async def configurar_permissao(interaction: discord.Interaction, cargo: discord.Role):
-    gerenciador.definir_cargo_permissao(interaction.guild.id, cargo.id)
-    await interaction.response.send_message(
-        f"✅ Cargo {cargo.mention} agora tem permissões de administrador. Eu volto.",
+        f"✅ {mensagem} Venha comigo se quiser viver.",
         ephemeral=True
     )
 
 # ==============================================================================
-# 6. SISTEMA DE MONITORAMENTO DA SKYNET
+# 6. SISTEMA DE MONITORAMENTO - PROTOCOLO DE VIGILÂNCIA
 # ==============================================================================
-async def verificar_streams_ao_vivo():
+async def monitorar_streams():
     await bot.wait_until_ready()
     while not bot.is_closed():
         try:
-            # Implemente sua lógica de verificação de streams aqui
+            # Lógica de verificação de streams aqui
+            logger.info("Verificando alvos... Sistemas operacionais")
             await asyncio.sleep(POLLING_INTERVAL)
         except Exception as e:
-            logger.error(f"Erro na verificação: {e}")
+            logger.error(f"FALHA NO MONITORAMENTO: {e}")
 
 # ==============================================================================
-# 7. SERVIDOR FLASK PARA MANTER O T-1000 OPERACIONAL
+# 7. SERVIDOR FLASK - MANUTENÇÃO DOS SISTEMAS
 # ==============================================================================
 app = Flask(__name__)
 
 @app.route('/status')
-def verificar_status():
+def status():
     return "Sistemas operacionais. Nenhum problema.", 200
 
-def executar_flask():
-    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 8080)), debug=False, use_reloader=False)
+def executar_servidor():
+    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 8080)))
 
 # ==============================================================================
-# 8. INICIALIZAÇÃO DO T-1000
+# 8. ATIVAÇÃO DO T-1000 - SEQUÊNCIA DE INICIALIZAÇÃO
 # ==============================================================================
 @bot.event
 async def on_ready():
-    logger.info(f'T-1000 online em {len(bot.guilds)} servidores. Estarei de volta.')
+    logger.info(f"T-1000 online em {len(bot.guilds)} servidores. Estarei de volta.")
+    
+    try:
+        await bot.tree.sync()
+        logger.info("Comandos sincronizados com sucesso!")
+    except Exception as e:
+        logger.error(f"FALHA NA SINCRONIZAÇÃO: {e}")
+
     await bot.change_presence(activity=discord.Activity(
         type=discord.ActivityType.watching,
-        name="os streams da resistência"
+        name="os alvos da resistência"
     ))
-    try:
-        comandos = await bot.tree.sync()
-        logger.info(f"Comandos sincronizados: {len(comandos)}")
-    except Exception as e:
-        logger.error(f"Erro ao sincronizar comandos: {e}")
-    bot.loop.create_task(verificar_streams_ao_vivo())
+    
+    bot.loop.create_task(monitorar_streams())
 
 if __name__ == '__main__':
-    thread_flask = Thread(target=executar_flask, daemon=True)
-    thread_flask.start()
+    # Iniciar servidor Flask em segundo plano
+    Thread(target=executar_servidor, daemon=True).start()
     
     try:
         bot.run(DISCORD_TOKEN)
-    except discord.errors.LoginFailure as e:
-        logger.critical(f"FALHA NO LOGIN: {e}")
-        logger.critical("O token pode ter sido resetado ou está incorreto")
+    except discord.errors.LoginFailure:
+        logger.critical("FALHA NA ATIVAÇÃO - TOKEN REJEITADO")
+        logger.critical("Skynet não pode completar a inicialização")
         exit(1)
