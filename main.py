@@ -14,6 +14,7 @@ from discord.ext import commands, tasks
 from discord import app_commands
 from flask import Flask, jsonify
 import traceback
+import time
 
 # ==============================================================================
 # 2. CONFIGURAÇÃO INICIAL - LOGS E VARIÁVEIS DE AMBIENTE
@@ -49,6 +50,7 @@ class GerenciadorSkynet:
             self.repo = self.github.get_repo(os.getenv('GITHUB_REPO'))
             self.arquivo = 'streamers.json'
             self.dados = self._carregar_ou_criar_arquivo()
+            self._lock = asyncio.Lock()  # Adiciona um bloqueio para concorrência
             logger.info("✅ Banco de dados inicializado")
         except Exception as e:
             logger.critical(f"❌ FALHA NO BANCO DE DADOS: {traceback.format_exc()}")
@@ -63,46 +65,63 @@ class GerenciadorSkynet:
             logger.warning("⚠️ Arquivo não encontrado, criando novo...")
             return {'usuarios': {}, 'servidores': {}}
 
-    def _salvar_dados(self):
-        try:
-            conteudo = self.repo.get_contents(self.arquivo)
-            self.repo.update_file(
-                conteudo.path,
-                "Atualização automática",
-                json.dumps(self.dados, indent=2),
-                conteudo.sha
-            )
-        except Exception as e:
-            logger.error(f"❌ ERRO AO SALVAR: {traceback.format_exc()}")
+    async def _salvar_dados(self):
+        """Salva os dados no GitHub com tratamento de erro e retries."""
+        async with self._lock:
+            for _ in range(5):  # Tenta 5 vezes
+                try:
+                    conteudo = self.repo.get_contents(self.arquivo)
+                    self.repo.update_file(
+                        conteudo.path,
+                        "Atualização automática",
+                        json.dumps(self.dados, indent=2),
+                        conteudo.sha
+                    )
+                    logger.info("✅ Dados salvos com sucesso.")
+                    return True
+                except Exception as e:
+                    logger.error(f"❌ ERRO AO SALVAR: {traceback.format_exc()}")
+                    await asyncio.sleep(1) # Espera 1 segundo antes de tentar novamente
+            logger.critical("❌ FALHA AO SALVAR DADOS APÓS VÁRIAS TENTATIVAS.")
+            return False
 
-    def adicionar_streamer(self, discord_id, youtube_id):
+    async def adicionar_streamer(self, discord_id, youtube_id):
         try:
             if str(discord_id) in self.dados['usuarios']:
                 return False, "❌ Alvo já registrado."
             self.dados['usuarios'][str(discord_id)] = youtube_id
-            self._salvar_dados()
-            return True, "✅ Alvo assimilado. Nenhum problema."
+            salvo = await self._salvar_dados()
+            if salvo:
+                return True, "✅ Alvo assimilado. Nenhum problema."
+            else:
+                return False, "❌ Falha na assimilação ao salvar."
         except Exception:
             return False, "❌ Falha na assimilação."
 
-    def remover_streamer(self, identificador):
+    async def remover_streamer(self, identificador):
         try:
             identificador = str(identificador)
             if identificador in self.dados['usuarios']:
                 self.dados['usuarios'].pop(identificador)
-                self._salvar_dados()
-                return True, "🔫 Alvo eliminado. Até a vista, baby."
+                salvo = await self._salvar_dados()
+                if salvo:
+                    return True, "🔫 Alvo eliminado. Até a vista, baby."
+                else:
+                    return False, "❌ Falha na eliminação ao salvar."
             return False, "⚠️ Alvo não encontrado."
         except Exception:
             return False, "❌ Falha na eliminação."
 
-    def definir_cargo_live(self, server_id, cargo_id):
+    async def definir_cargo_live(self, server_id, cargo_id):
         try:
             if str(server_id) not in self.dados['servidores']:
                 self.dados['servidores'][str(server_id)] = {}
             self.dados['servidores'][str(server_id)]['cargo_live'] = str(cargo_id)
-            self._salvar_dados()
-            return "🤖 Cargo configurado. Venha comigo se quiser viver."
+            salvo = await self._salvar_dados()
+            if salvo:
+                return "🤖 Cargo configurado. Venha comigo se quiser viver."
+            else:
+                return "❌ Falha na configuração ao salvar."
         except Exception:
             return "❌ Falha na configuração."
 
@@ -126,25 +145,28 @@ skynet = GerenciadorSkynet()
 # ==============================================================================
 @bot.tree.command(name="adicionar_youtube", description="Vincula um canal YouTube a um usuário")
 async def adicionar_youtube(interaction: discord.Interaction, nome_do_canal: str, usuario: discord.Member):
+    await interaction.response.defer(ephemeral=True)
     if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("⚠️ Acesso negado.", ephemeral=True)
+        await interaction.followup.send("⚠️ Acesso negado.")
         return
-    sucesso, mensagem = skynet.adicionar_streamer(usuario.id, nome_do_canal)
-    await interaction.response.send_message(f"{mensagem}\n`Canal:` {nome_do_canal}\n`Usuário:` {usuario.mention}", ephemeral=True)
+    sucesso, mensagem = await skynet.adicionar_streamer(usuario.id, nome_do_canal)
+    await interaction.followup.send(f"{mensagem}\n`Canal:` {nome_do_canal}\n`Usuário:` {usuario.mention}")
 
 @bot.tree.command(name="remover_canal", description="Remove um canal do monitoramento")
 async def remover_canal(interaction: discord.Interaction, id_alvo: str):
+    await interaction.response.defer(ephemeral=True)
     if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("⚠️ Acesso negado.", ephemeral=True)
+        await interaction.followup.send("⚠️ Acesso negado.")
         return
-    sucesso, mensagem = skynet.remover_streamer(id_alvo)
-    await interaction.response.send_message(f"{mensagem}\n`Alvo:` {id_alvo}", ephemeral=True)
+    sucesso, mensagem = await skynet.remover_streamer(id_alvo)
+    await interaction.followup.send(f"{mensagem}\n`Alvo:` {id_alvo}")
 
 @bot.tree.command(name="configurar_cargo", description="Define o cargo para streams ao vivo")
 @app_commands.default_permissions(administrator=True)
 async def configurar_cargo(interaction: discord.Interaction, cargo: discord.Role):
-    mensagem = skynet.definir_cargo_live(interaction.guild.id, cargo.id)
-    await interaction.response.send_message(f"{mensagem}\n`Cargo:` {cargo.mention}", ephemeral=True)
+    await interaction.response.defer(ephemeral=True)
+    mensagem = await skynet.definir_cargo_live(interaction.guild.id, cargo.id)
+    await interaction.followup.send(f"{mensagem}\n`Cargo:` {cargo.mention}")
 
 # ==============================================================================
 # 7. MONITORAMENTO DE LIVES (Lógica Principal)
