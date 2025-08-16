@@ -220,7 +220,7 @@ async def monitorar_streamers():
             logger.warning(f"⚠️ Não foi possível obter o ID do canal para o usuário {youtube_username}.")
             continue
             
-        esta_ao_vivo, live_url = await verificar_live(youtube_channel_id)
+        esta_ao_vivo, live_url = await verificar_live_status(youtube_channel_id)
         
         for guild in bot.guilds:
             # Encontra o membro no servidor específico
@@ -248,10 +248,11 @@ async def monitorar_streamers():
                                 logger.error(f"❌ Sem permissão para remover cargo de {membro.name}")
     logger.info("✅ Verificação de lives concluída.")
     
-async def verificar_live(channel_id):
-    """Verifica se um canal do YouTube está transmitindo ao vivo usando o ID do canal."""
+async def verificar_live_status(channel_id):
+    """Verifica se um canal do YouTube está transmitindo ao vivo de forma mais robusta."""
     try:
-        params = {
+        # Primeiro, busca por um vídeo "live" no canal
+        params_search = {
             'part': 'snippet',
             'channelId': channel_id,
             'type': 'video',
@@ -259,17 +260,32 @@ async def verificar_live(channel_id):
             'key': YOUTUBE_API_KEY
         }
         
-        response = requests.get(f'{YOUTUBE_API_URL}/search', params=params)
-        response.raise_for_status()
+        response_search = requests.get(f'{YOUTUBE_API_URL}/search', params=params_search)
+        response_search.raise_for_status()
+        data_search = response_search.json()
         
-        data = response.json()
-        
-        if 'items' in data and data['items']:
-            # A API retorna um video de live, pegue o videoId do primeiro item
-            video_id = data['items'][0]['id']['videoId']
-            return True, f"https://www.youtube.com/watch?v={video_id}"
+        if 'items' in data_search and data_search['items']:
+            video_id = data_search['items'][0]['id']['videoId']
+            
+            # Em seguida, verifica os detalhes da transmissão ao vivo do vídeo
+            params_videos = {
+                'part': 'liveStreamingDetails',
+                'id': video_id,
+                'key': YOUTUBE_API_KEY
+            }
+            
+            response_videos = requests.get(f'{YOUTUBE_API_URL}/videos', params=params_videos)
+            response_videos.raise_for_status()
+            data_videos = response_videos.json()
+            
+            if 'items' in data_videos and data_videos['items']:
+                live_details = data_videos['items'][0].get('liveStreamingDetails')
+                if live_details and 'activeLiveChatId' in live_details:
+                    return True, f"https://www.youtube.com/watch?v={video_id}"
+            else:
+                logger.warning(f"⚠️ Detalhes da live não encontrados para o vídeo {video_id}.")
     except requests.exceptions.RequestException as e:
-        logger.error(f"❌ ERRO AO ACESSAR API DO YOUTUBE: {e}")
+        logger.error(f"❌ ERRO NA API DO YOUTUBE: {e}")
     except Exception as e:
         logger.error(f"❌ ERRO DESCONHECIDO NO MONITORAMENTO: {e}")
 
