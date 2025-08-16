@@ -161,72 +161,73 @@ async def configurar_cargo(interaction: discord.Interaction, cargo: discord.Role
         await interaction.response.send_message("⚠️ Falha ao configurar cargo. Tente novamente.", ephemeral=True)
 
 # ==============================================================================
-# 6. SISTEMA DE MONITORAMENTO - PROTOCOLO DE VIGILÂNCIA
-# ==============================================================================
-async def monitorar_streams():
-    await bot.wait_until_ready()
-    while not bot.is_closed():
-        try:
-            logger.info("Verificando alvos... Sistemas operacionais")
-            # Implemente aqui a lógica de verificação de streams
-            await asyncio.sleep(POLLING_INTERVAL)
-        except Exception as e:
-            logger.error(f"FALHA NO MONITORAMENTO: {traceback.format_exc()}")
-
-# ==============================================================================
-# 7. SERVIDOR FLASK - MANUTENÇÃO DOS SISTEMAS
+# 6. SERVIDOR FLASK PARA UPTIME ROBOT (ATUALIZADO)
 # ==============================================================================
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "Sistemas da Skynet operacionais. Nenhum problema.", 200
+    return "Sistemas operacionais", 200
 
 @app.route('/health')
 def health_check():
-    return "T-1000 operacional. Sistemas normais.", 200
+    try:
+        # Verifica se o bot está conectado
+        if not bot.is_ready():
+            return "Bot não conectado", 503
+        
+        # Verifica conexão com GitHub
+        skynet.repo.get_contents('streamers.json')
+        
+        return "T-1000 operacional", 200
+    except Exception:
+        return "Falha no sistema", 500
 
 def executar_servidor():
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', 8080)))
 
 # ==============================================================================
-# 8. ATIVAÇÃO DO T-1000 - SEQUÊNCIA DE INICIALIZAÇÃO
+# 7. MONITORAMENTO DE STREAMS (OTIMIZADO)
+# ==============================================================================
+async def monitorar_streams():
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        try:
+            # Implemente sua lógica de verificação aqui
+            await asyncio.sleep(POLLING_INTERVAL)
+        except Exception:
+            logger.error(f"ERRO: {traceback.format_exc()}")
+
+# ==============================================================================
+# 8. INICIALIZAÇÃO (COM VERIFICAÇÃO DE UPTIME)
 # ==============================================================================
 @bot.event
 async def on_ready():
     try:
-        logger.info(f"T-1000 online em {len(bot.guilds)} servidores. Estarei de volta.")
+        logger.info(f"Bot conectado em {len(bot.guilds)} servidores")
         
-        # Teste de conexão com APIs externas
-        try:
-            requests.get(YOUTUBE_API_URL, timeout=5)
-            logger.info("Conexão com YouTube API: OK")
-        except Exception as e:
-            logger.error(f"FALHA NA CONEXÃO COM YOUTUBE: {traceback.format_exc()}")
+        # Sincroniza comandos
+        await bot.tree.sync()
         
-        # Sincronização de comandos
-        synced = await bot.tree.sync()
-        logger.info(f"{len(synced)} comandos sincronizados")
-
+        # Inicia monitoramento
+        bot.loop.create_task(monitorar_streams())
+        
+        # Status personalizado
         await bot.change_presence(activity=discord.Activity(
             type=discord.ActivityType.watching,
-            name="os alvos da resistência"
+            name=f"{len(bot.guilds)} servidores"
         ))
-        
-        bot.loop.create_task(monitorar_streams())
-    except Exception as e:
-        logger.critical(f"FALHA CRÍTICA: {traceback.format_exc()}")
+    except Exception:
+        logger.critical(f"FALHA: {traceback.format_exc()}")
 
 if __name__ == '__main__':
+    # Inicia servidor Flask
+    flask_thread = Thread(target=executar_servidor, daemon=True)
+    flask_thread.start()
+    
+    # Inicia bot
     try:
-        # Iniciar servidor Flask em segundo plano
-        flask_thread = Thread(target=executar_servidor, daemon=True)
-        flask_thread.start()
-        
         bot.run(DISCORD_TOKEN)
-    except discord.errors.LoginFailure:
-        logger.critical("FALHA NA ATIVAÇÃO - TOKEN REJEITADO")
-        exit(1)
-    except Exception as e:
-        logger.critical(f"FALHA NA INICIALIZAÇÃO: {traceback.format_exc()}")
+    except Exception:
+        logger.critical("Falha na inicialização do bot")
         exit(1)
