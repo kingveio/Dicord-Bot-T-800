@@ -143,12 +143,38 @@ skynet = GerenciadorSkynet()
 # ==============================================================================
 # 5. COMANDOS SLASH (/)
 # ==============================================================================
+async def get_channel_id_from_search(query):
+    """Busca o ID do canal do YouTube com base em uma pesquisa."""
+    try:
+        params = {
+            'part': 'id',
+            'q': query,
+            'type': 'channel',
+            'key': YOUTUBE_API_KEY
+        }
+        response = requests.get(f'{YOUTUBE_API_URL}/search', params=params)
+        response.raise_for_status()
+        data = response.json()
+        if 'items' in data and data['items']:
+            return data['items'][0]['id']['channelId']
+    except requests.exceptions.RequestException as e:
+        logger.error(f"❌ ERRO NA PESQUISA DO CANAL: {e}")
+    except Exception as e:
+        logger.error(f"❌ ERRO DESCONHECIDO NO GET_CHANNEL_ID: {e}")
+    return None
+
 @bot.tree.command(name="adicionar_youtube", description="Vincula um canal YouTube a um usuário")
 async def adicionar_youtube(interaction: discord.Interaction, nome_do_canal: str, usuario: discord.Member):
     await interaction.response.defer(ephemeral=True)
     if not interaction.user.guild_permissions.administrator:
         await interaction.followup.send("⚠️ Acesso negado.")
         return
+        
+    youtube_id = await get_channel_id_from_search(nome_do_canal)
+    if not youtube_id:
+        await interaction.followup.send(f"❌ Não foi possível encontrar um canal do YouTube com o nome `{nome_do_canal}`.")
+        return
+
     sucesso, mensagem = await skynet.adicionar_streamer(usuario.id, nome_do_canal)
     await interaction.followup.send(f"{mensagem}\n`Canal:` {nome_do_canal}\n`Usuário:` {usuario.mention}")
 
@@ -181,53 +207,6 @@ async def configurar_cargo(interaction: discord.Interaction, cargo: discord.Role
 # ==============================================================================
 # 7. MONITORAMENTO DE LIVES (Lógica Principal)
 # ==============================================================================
-
-async def get_channel_id_from_username(username):
-    """Obtém o ID do canal do YouTube a partir do nome de usuário."""
-    try:
-        params = {
-            'part': 'id',
-            'forUsername': username,
-            'key': YOUTUBE_API_KEY
-        }
-        response = requests.get(f'{YOUTUBE_API_URL}/channels', params=params)
-        response.raise_for_status()
-        data = response.json()
-        if 'items' in data and data['items']:
-            return data['items'][0]['id']
-    except requests.exceptions.RequestException as e:
-        logger.error(f"❌ ERRO AO OBTER ID DO CANAL: {e}")
-    except Exception as e:
-        logger.error(f"❌ ERRO DESCONHECIDO NO GET_CHANNEL_ID: {e}")
-    return None
-
-async def verificar_live(channel_id):
-    """Verifica se um canal do YouTube está transmitindo ao vivo usando o ID do canal."""
-    try:
-        params = {
-            'part': 'snippet,liveStreamingDetails',
-            'channelId': channel_id,
-            'type': 'video',
-            'eventType': 'live',
-            'key': YOUTUBE_API_KEY
-        }
-        
-        response = requests.get(f'{YOUTUBE_API_URL}/search', params=params)
-        response.raise_for_status()
-        
-        data = response.json()
-        
-        if 'items' in data and data['items']:
-            # A API retorna um video de live, pegue o videoId do primeiro item
-            video_id = data['items'][0]['id']['videoId']
-            return True, f"https://www.youtube.com/watch?v={video_id}"
-    except requests.exceptions.RequestException as e:
-        logger.error(f"❌ ERRO AO ACESSAR API DO YOUTUBE: {e}")
-    except Exception as e:
-        logger.error(f"❌ ERRO DESCONHECIDO NO MONITORAMENTO: {e}")
-
-    return False, None
-
 @tasks.loop(seconds=POLLING_INTERVAL)
 async def monitorar_streamers():
     """Tarefa que verifica se os streamers estão ao vivo e atualiza o cargo."""
@@ -236,7 +215,7 @@ async def monitorar_streamers():
     
     for discord_id, youtube_username in streamers.items():
         # Obtém o ID do canal a partir do nome de usuário
-        youtube_channel_id = await get_channel_id_from_username(youtube_username)
+        youtube_channel_id = await get_channel_id_from_search(youtube_username)
         if not youtube_channel_id:
             logger.warning(f"⚠️ Não foi possível obter o ID do canal para o usuário {youtube_username}.")
             continue
@@ -268,6 +247,33 @@ async def monitorar_streamers():
                             except discord.Forbidden:
                                 logger.error(f"❌ Sem permissão para remover cargo de {membro.name}")
     logger.info("✅ Verificação de lives concluída.")
+    
+async def verificar_live(channel_id):
+    """Verifica se um canal do YouTube está transmitindo ao vivo usando o ID do canal."""
+    try:
+        params = {
+            'part': 'snippet,liveStreamingDetails',
+            'channelId': channel_id,
+            'type': 'video',
+            'eventType': 'live',
+            'key': YOUTUBE_API_KEY
+        }
+        
+        response = requests.get(f'{YOUTUBE_API_URL}/search', params=params)
+        response.raise_for_status()
+        
+        data = response.json()
+        
+        if 'items' in data and data['items']:
+            # A API retorna um video de live, pegue o videoId do primeiro item
+            video_id = data['items'][0]['id']['videoId']
+            return True, f"https://www.youtube.com/watch?v={video_id}"
+    except requests.exceptions.RequestException as e:
+        logger.error(f"❌ ERRO AO ACESSAR API DO YOUTUBE: {e}")
+    except Exception as e:
+        logger.error(f"❌ ERRO DESCONHECIDO NO MONITORAMENTO: {e}")
+
+    return False, None
 
 # ==============================================================================
 # 8. INICIALIZAÇÃO DO BOT
