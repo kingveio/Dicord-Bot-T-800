@@ -252,7 +252,7 @@ async def verificar_live(channel_id):
     """Verifica se um canal do YouTube está transmitindo ao vivo usando o ID do canal."""
     try:
         params = {
-            'part': 'snippet,liveStreamingDetails',
+            'part': 'snippet',
             'channelId': channel_id,
             'type': 'video',
             'eventType': 'live',
