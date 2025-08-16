@@ -60,7 +60,12 @@ class GerenciadorSkynet:
         try:
             conteudo = self.repo.get_contents(self.arquivo)
             dados = json.loads(conteudo.decoded_content.decode())
-            return {'usuarios': dados.get('usuarios', {}), 'servidores': dados.get('servidores', {})}
+            # Garante que a estrutura esteja correta, caso o arquivo esteja vazio
+            if 'usuarios' not in dados:
+                dados['usuarios'] = {}
+            if 'servidores' not in dados:
+                dados['servidores'] = {}
+            return dados
         except Exception:
             logger.warning("⚠️ Arquivo não encontrado, criando novo...")
             return {'usuarios': {}, 'servidores': {}}
@@ -86,6 +91,7 @@ class GerenciadorSkynet:
             return False
 
     async def adicionar_streamer(self, discord_id, youtube_id):
+        """Adiciona um streamer com o ID do canal do YouTube no banco de dados."""
         try:
             if str(discord_id) in self.dados['usuarios']:
                 return False, "❌ Alvo já registrado."
@@ -98,11 +104,12 @@ class GerenciadorSkynet:
         except Exception:
             return False, "❌ Falha na assimilação."
 
-    async def remover_streamer(self, identificador):
+    async def remover_streamer(self, discord_id):
+        """Remove um streamer pelo ID do Discord."""
         try:
-            identificador = str(identificador)
-            if identificador in self.dados['usuarios']:
-                self.dados['usuarios'].pop(identificador)
+            discord_id = str(discord_id)
+            if discord_id in self.dados['usuarios']:
+                self.dados['usuarios'].pop(discord_id)
                 salvo = await self._salvar_dados()
                 if salvo:
                     return True, "🔫 Alvo eliminado. Até a vista, baby."
@@ -143,8 +150,31 @@ skynet = GerenciadorSkynet()
 # ==============================================================================
 # 5. COMANDOS SLASH (/)
 # ==============================================================================
+async def get_channel_id_from_handle(handle_name):
+    """Busca o ID do canal do YouTube usando o handle (@)."""
+    try:
+        # A API do YouTube aceita o handle com ou sem o '@'
+        if not handle_name.startswith('@'):
+            handle_name = f'@{handle_name}'
+
+        params = {
+            'part': 'id',
+            'forHandle': handle_name,
+            'key': YOUTUBE_API_KEY
+        }
+        response = requests.get(f'{YOUTUBE_API_URL}/channels', params=params)
+        response.raise_for_status()
+        data = response.json()
+        if 'items' in data and data['items']:
+            return data['items'][0]['id']
+    except requests.exceptions.RequestException as e:
+        logger.error(f"❌ ERRO NA BUSCA POR HANDLE: {e}")
+    except Exception as e:
+        logger.error(f"❌ ERRO DESCONHECIDO NO GET_CHANNEL_ID_FROM_HANDLE: {e}")
+    return None
+
 async def get_channel_id_from_search(query):
-    """Busca o ID do canal do YouTube com base em uma pesquisa."""
+    """Busca o ID do canal do YouTube com base em uma pesquisa geral."""
     try:
         params = {
             'part': 'id',
@@ -160,7 +190,7 @@ async def get_channel_id_from_search(query):
     except requests.exceptions.RequestException as e:
         logger.error(f"❌ ERRO NA PESQUISA DO CANAL: {e}")
     except Exception as e:
-        logger.error(f"❌ ERRO DESCONHECIDO NO GET_CHANNEL_ID: {e}")
+        logger.error(f"❌ ERRO DESCONHECIDO NO GET_CHANNEL_ID_FROM_SEARCH: {e}")
     return None
 
 @bot.tree.command(name="adicionar_youtube", description="Vincula um canal YouTube a um usuário")
@@ -169,33 +199,32 @@ async def adicionar_youtube(interaction: discord.Interaction, nome_do_canal: str
     if not interaction.user.guild_permissions.administrator:
         await interaction.followup.send("⚠️ Acesso negado.")
         return
-        
-    youtube_id = await get_channel_id_from_search(nome_do_canal)
+    
+    youtube_id = None
+    # Prioriza a busca por handle se o nome começar com '@'
+    if nome_do_canal.startswith('@'):
+        youtube_id = await get_channel_id_from_handle(nome_do_canal)
+
+    # Se a busca por handle falhou, tenta a busca geral
+    if not youtube_id:
+        youtube_id = await get_channel_id_from_search(nome_do_canal)
+
     if not youtube_id:
         await interaction.followup.send(f"❌ Não foi possível encontrar um canal do YouTube com o nome `{nome_do_canal}`.")
         return
 
-    sucesso, mensagem = await skynet.adicionar_streamer(usuario.id, nome_do_canal)
-    await interaction.followup.send(f"{mensagem}\n`Canal:` {nome_do_canal}\n`Usuário:` {usuario.mention}")
+    sucesso, mensagem = await skynet.adicionar_streamer(usuario.id, youtube_id)
+    await interaction.followup.send(f"{mensagem}\n`Channel ID:` {youtube_id}\n`Usuário:` {usuario.mention}")
 
-@bot.tree.command(name="remover_canal", description="Remove um canal do monitoramento usando o nome do canal do YouTube")
-async def remover_canal(interaction: discord.Interaction, nome_do_canal: str):
+@bot.tree.command(name="remover_canal", description="Remove um canal do monitoramento usando o ID do usuário do Discord")
+async def remover_canal(interaction: discord.Interaction, usuario: discord.Member):
     await interaction.response.defer(ephemeral=True)
     if not interaction.user.guild_permissions.administrator:
         await interaction.followup.send("⚠️ Acesso negado.")
         return
     
-    discord_id_alvo = None
-    for discord_id, youtube_username in skynet.dados['usuarios'].items():
-        if youtube_username.lower() == nome_do_canal.lower():
-            discord_id_alvo = discord_id
-            break
-
-    if discord_id_alvo:
-        sucesso, mensagem = await skynet.remover_streamer(discord_id_alvo)
-        await interaction.followup.send(f"{mensagem}\n`Canal:` {nome_do_canal}")
-    else:
-        await interaction.followup.send(f"⚠️ Canal '{nome_do_canal}' não encontrado na base de dados.")
+    sucesso, mensagem = await skynet.remover_streamer(usuario.id)
+    await interaction.followup.send(f"{mensagem}\n`Usuário:` {usuario.mention}")
 
 @bot.tree.command(name="configurar_cargo", description="Define o cargo para streams ao vivo")
 @app_commands.default_permissions(administrator=True)
@@ -213,13 +242,7 @@ async def monitorar_streamers():
     logger.info("🤖 Iniciando verificação de lives...")
     streamers = skynet.dados['usuarios']
     
-    for discord_id, youtube_username in streamers.items():
-        # Obtém o ID do canal a partir do nome de usuário
-        youtube_channel_id = await get_channel_id_from_search(youtube_username)
-        if not youtube_channel_id:
-            logger.warning(f"⚠️ Não foi possível obter o ID do canal para o usuário {youtube_username}.")
-            continue
-            
+    for discord_id, youtube_channel_id in streamers.items():
         esta_ao_vivo, live_url = await verificar_live_status(youtube_channel_id)
         
         for guild in bot.guilds:
