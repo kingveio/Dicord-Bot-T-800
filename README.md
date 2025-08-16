@@ -1,32 +1,79 @@
-# T-800-YouTube 🤖
+# 🤖 T-1000 - Monitor de Lives do YouTube para Discord
 
-Bot do Discord que atualiza cargos quando usuários estão ao vivo no YouTube, com a capacidade de gerenciar permissões de uso.
+!(https://placehold.co/800x400/2c2f33/ffffff?text=T-1000)
 
-### ⚙️ Pré-requisitos
-Para o funcionamento do bot, são necessários os seguintes itens:
-* 🐍 Python 3.11+
-* Uma conta no Render (plano gratuito)
-* As seguintes variáveis de ambiente devem ser configuradas no seu serviço Render:
-    * `DISCORD_TOKEN`: O token do seu bot do Discord.
-    * `GITHUB_TOKEN`: Um token de acesso pessoal ao GitHub para permitir que o bot leia e escreva no repositório.
-    * `GITHUB_REPO`: O nome do seu repositório onde o arquivo `streamers.json` será armazenado (ex: `seuuser/seurepo`).
-    * **`YOUTUBE_API_KEY`**: A chave da API de Dados do YouTube. Você pode obtê-la no Google Cloud Console.
+## 📖 Sobre
 
-### 🚀 Como Hospedar no Render
-O processo para hospedar o bot no Render é o seguinte:
-1.  Conecte seu repositório GitHub ao Render.
-2.  Defina as variáveis de ambiente mencionadas acima no painel do Render.
-3.  O arquivo `render.yaml` já está configurado para o deploy automático.
+O **T-1000** é um bot de Discord projetado para monitorar canais do YouTube e gerenciar automaticamente um cargo de "Live" para os streamers. Ele utiliza a API do YouTube para detectar quando um canal está transmitindo ao vivo e atualiza o cargo do usuário correspondente no Discord, tornando fácil para a comunidade saber quem está online.
 
-### 🎮 Comandos do Bot
-Os comandos de barra a seguir podem ser usados no Discord:
-* `/youtube_canal [id_do_canal] [usuário_do_discord]`: Vincula um canal do YouTube (usando o ID do canal, ex: `UCyQxQ3sKq3...`) a um membro do Discord. Apenas usuários com permissão de administrador ou com o cargo configurado podem usar este comando.
-* `/remover_streamer [id]`: Remove um streamer da lista por ID do Discord ou ID do canal do YouTube. Apenas usuários com permissão de administrador ou com o cargo configurado podem usar este comando.
-* `/configurar_cargo [cargo]`: Define o cargo que será atribuído aos streamers quando estiverem ao vivo. Este comando é restrito a administradores.
-* `/configurar_permissao [cargo]`: Define um cargo específico para que os membros possam usar os comandos `/youtube_canal` e `/remover_streamer`. Este comando é restrito a administradores.
+O bot usa o GitHub como um banco de dados simples, o que o torna ideal para ser hospedado em plataformas gratuitas como o Render.
 
-### 📂 Arquivos Principais
-* `main.py`: O código principal do bot, contendo a lógica de conexão com o Discord e o YouTube, além de gerenciar os comandos e as rotinas de verificação.
-* `streamers.json`: O "banco de dados" do bot, armazenado no GitHub, que guarda as informações dos streamers e as configurações de cargos por servidor.
-* `requirements.txt`: Lista todas as bibliotecas Python necessárias para o projeto.
-* `render.yaml`: O arquivo de configuração para o serviço de hospedagem Render.
+## ✨ Funcionalidades
+
+* **Monitoramento de Lives:** Verifica periodicamente canais do YouTube para saber se estão ao vivo.
+
+* **Gestão de Cargos Automática:** Adiciona ou remove um cargo pré-definido quando o streamer inicia ou encerra a live.
+
+* **Comandos Slash (`/`)**: Interface moderna e intuitiva para adicionar, remover e configurar streamers diretamente no Discord.
+
+* **Sistema de Banco de Dados Simples:** Armazena as informações dos streamers em um arquivo JSON no GitHub.
+
+* **Uptime Contínuo:** Configurado para ser hospedado no Render e mantido online com um serviço de monitoramento como o UptimeRobot.
+
+## 🚀 Como Usar
+
+O bot utiliza comandos slash (`/`) para todas as interações.
+
+* `/adicionar_youtube nome_do_canal: <handle> usuario: <membro>`
+
+  * Adiciona um streamer. Use o **handle** do YouTube com `@` (ex: `@felps`).
+
+  * **Exemplo:** `/adicionar_youtube nome_do_canal: @seu-streamer usuario: @SeuMembroDiscord`
+
+* `/remover_canal usuario: <membro>`
+
+  * Remove o monitoramento de um usuário.
+
+  * **Exemplo:** `/remover_canal usuario: @SeuMembroDiscord`
+
+* `/configurar_cargo cargo: <cargo>`
+
+  * Define qual cargo será adicionado/removido automaticamente.
+
+  * **Exemplo:** `/configurar_cargo cargo: @Live`
+
+## ⚙️ Configuração (Setup)
+
+Para rodar o bot, você precisará configurar as credenciais necessárias em três plataformas: Discord, Google (YouTube) e GitHub.
+
+### Passo 1: Discord
+
+1. Vá para o [Portal do Desenvolvedor do Discord](https://www.google.com/search?q=https://discord.com/developers/applications).
+
+2. Crie uma nova aplicação e, em seguida, um bot.
+
+3. Vá em **Bot** > **Privileged Gateway Intents** e ative o `SERVER MEMBERS INTENT`.
+
+4. Copie o **TOKEN** do bot. Você precisará dele mais tarde.
+
+5. Adicione o bot ao seu servidor com permissões de `Administrator` ou com as seguintes permissões: `Manage Roles` e `Read Messages/View Channels`.
+
+### Passo 2: Google Cloud (API do YouTube)
+
+1. Vá para o [Console do Google Cloud](https://console.cloud.google.com/).
+
+2. Crie um novo projeto.
+
+3. No menu, vá em **APIs e Serviços** > **Biblioteca**.
+
+4. Pesquise e ative a **YouTube Data API v3**.
+
+5. Vá em **APIs e Serviços** > **Credenciais**.
+
+6. Clique em **+ CRIAR CREDENCIAIS** > **Chave de API** e copie a chave.
+
+### Passo 3: GitHub (Banco de Dados)
+
+1. Crie um novo repositório **privado** no seu GitHub para hospedar o código e o arquivo de dados.
+
+2. Crie um arquivo chamado `streamers.json` na raiz do repositório. O arquivo deve conter o seguinte JSON vazio:
