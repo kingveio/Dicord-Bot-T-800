@@ -83,14 +83,10 @@ Para rodar o bot, você precisará configurar as credenciais necessárias em tr�
 
 2. Crie um arquivo chamado `streamers.json` na raiz do repositório. O arquivo deve conter o seguinte JSON vazio:
 
-```
-
 {
 "usuarios": {},
 "servidores": {}
 }
-
-```
 
 3. Vá para as suas **Configurações do GitHub** > **Developer settings** > **Personal access tokens** > **Tokens (classic)**.
 
