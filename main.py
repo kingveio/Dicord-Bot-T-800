@@ -177,7 +177,7 @@ async def on_ready():
     await bot.tree.sync()
     await bot.change_presence(activity=discord.Activity(
         type=discord.ActivityType.watching,
-        name=f"{len(bot.guilds)} servidores"
+        name="Buscando alvos da resistência"  # ✅ TEXTO ALTERADO
     ))
 
 if __name__ == '__main__':
