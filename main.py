@@ -112,41 +112,51 @@ skynet = GerenciadorSkynet()
 # ==============================================================================
 # 5. COMANDOS DO T-1000 - INTERFACE DE CONTROLE
 # ==============================================================================
-@bot.tree.command(name="assimilar", description="Assimilar um canal à Skynet")
-async def assimilar(interaction: discord.Interaction, id_canal: str, usuario: discord.Member):
-    """Assimilar um canal do YouTube para monitoramento"""
+@bot.tree.command(name="adicionar_youtube", description="Vincular um canal do YouTube a um usuário")
+async def adicionar_youtube(
+    interaction: discord.Interaction,
+    nome_do_canal: str,
+    vincular_usuario: discord.Member
+):
+    """Associa um canal YouTube a um usuário do Discord"""
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message(
-            "Acesso negado. Nível de autorização insuficiente.",
+            "⚠️ Acesso negado. Nível de autorização insuficiente.",
             ephemeral=True
         )
         return
     
-    sucesso, mensagem = skynet.adicionar_streamer(usuario.id, id_canal)
-    resposta = f"✅ {mensagem}" if sucesso else f"⚠️ {mensagem}"
-    await interaction.response.send_message(resposta, ephemeral=True)
+    sucesso, mensagem = skynet.adicionar_streamer(vincular_usuario.id, nome_do_canal)
+    resposta = f"✅ {mensagem}" if sucesso else f"❌ {mensagem}"
+    await interaction.response.send_message(
+        f"{resposta}\n\n`Canal:` {nome_do_canal}\n`Usuário:` {vincular_usuario.mention}",
+        ephemeral=True
+    )
 
-@bot.tree.command(name="eliminar", description="Eliminar um alvo da Skynet")
-async def eliminar(interaction: discord.Interaction, id_alvo: str):
-    """Remover um streamer do monitoramento"""
+@bot.tree.command(name="remover_canal", description="Remover um canal YouTube do monitoramento")
+async def remover_canal(interaction: discord.Interaction, nome_do_canal: str):
+    """Remove um canal da lista de monitoramento"""
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message(
-            "Acesso negado. Você não tem permissão para isso.",
+            "⚠️ Acesso negado. Você não é um operador autorizado.",
             ephemeral=True
         )
         return
     
-    sucesso, mensagem = skynet.remover_streamer(id_alvo)
-    resposta = f"✅ {mensagem}" if sucesso else f"⚠️ {mensagem}"
-    await interaction.response.send_message(resposta, ephemeral=True)
+    sucesso, mensagem = skynet.remover_streamer(nome_do_canal)
+    await interaction.response.send_message(
+        f"🔫 {mensagem}\n\n`Canal removido:` {nome_do_canal}",
+        ephemeral=True
+    )
 
-@bot.tree.command(name="configurar_cargo", description="Definir cargo para streamers ao vivo")
+@bot.tree.command(name="configurar_cargo", description="Definir cargo para usuários em live")
 @app_commands.default_permissions(administrator=True)
 async def configurar_cargo(interaction: discord.Interaction, cargo: discord.Role):
-    """Configurar o cargo que será atribuído durante streams"""
-    mensagem = skynet.definir_cargo_live(interaction.guild.id, cargo.id)
+    """Configura o cargo automático para transmissões ao vivo"""
+    skynet.definir_cargo_live(interaction.guild.id, cargo.id)
     await interaction.response.send_message(
-        f"✅ {mensagem} Venha comigo se quiser viver.",
+        f"🤖 Cargo {cargo.mention} configurado com sucesso!\n"
+        "> *\"Será atribuído automaticamente durante transmissões. Venha comigo se quiser viver.\"*",
         ephemeral=True
     )
 
