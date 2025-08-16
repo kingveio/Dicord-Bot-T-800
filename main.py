@@ -147,7 +147,112 @@ async def configurar_cargo(interaction: discord.Interaction, cargo: discord.Role
     await interaction.response.send_message(f"{mensagem}\n`Cargo:` {cargo.mention}", ephemeral=True)
 
 # ==============================================================================
-# 6. SERVIDOR FLASK (PARA UPTIMEROBOT)
+# 7. MONITORAMENTO DE LIVES (Lógica Principal)
+# ==============================================================================
+
+async def get_channel_id_from_username(username):
+    """Obtém o ID do canal do YouTube a partir do nome de usuário."""
+    try:
+        params = {
+            'part': 'id',
+            'forUsername': username,
+            'key': YOUTUBE_API_KEY
+        }
+        response = requests.get(f'{YOUTUBE_API_URL}/channels', params=params)
+        response.raise_for_status()
+        data = response.json()
+        if 'items' in data and data['items']:
+            return data['items'][0]['id']
+    except requests.exceptions.RequestException as e:
+        logger.error(f"❌ ERRO AO OBTER ID DO CANAL: {e}")
+    except Exception as e:
+        logger.error(f"❌ ERRO DESCONHECIDO NO GET_CHANNEL_ID: {e}")
+    return None
+
+async def verificar_live(channel_id):
+    """Verifica se um canal do YouTube está transmitindo ao vivo usando o ID do canal."""
+    try:
+        params = {
+            'part': 'snippet,liveStreamingDetails',
+            'channelId': channel_id,
+            'type': 'video',
+            'eventType': 'live',
+            'key': YOUTUBE_API_KEY
+        }
+        
+        response = requests.get(f'{YOUTUBE_API_URL}/search', params=params)
+        response.raise_for_status()
+        
+        data = response.json()
+        
+        if 'items' in data and data['items']:
+            # A API retorna um video de live, pegue o videoId do primeiro item
+            video_id = data['items'][0]['id']['videoId']
+            return True, f"https://www.youtube.com/watch?v={video_id}"
+    except requests.exceptions.RequestException as e:
+        logger.error(f"❌ ERRO AO ACESSAR API DO YOUTUBE: {e}")
+    except Exception as e:
+        logger.error(f"❌ ERRO DESCONHECIDO NO MONITORAMENTO: {e}")
+
+    return False, None
+
+@tasks.loop(seconds=POLLING_INTERVAL)
+async def monitorar_streamers():
+    """Tarefa que verifica se os streamers estão ao vivo e atualiza o cargo."""
+    logger.info("🤖 Iniciando verificação de lives...")
+    streamers = skynet.dados['usuarios']
+    
+    for discord_id, youtube_username in streamers.items():
+        # Obtém o ID do canal a partir do nome de usuário
+        youtube_channel_id = await get_channel_id_from_username(youtube_username)
+        if not youtube_channel_id:
+            logger.warning(f"⚠️ Não foi possível obter o ID do canal para o usuário {youtube_username}.")
+            continue
+            
+        esta_ao_vivo, live_url = await verificar_live(youtube_channel_id)
+        
+        for guild in bot.guilds:
+            # Encontra o membro no servidor específico
+            membro = guild.get_member(int(discord_id))
+            if not membro:
+                continue
+
+            if str(guild.id) in skynet.dados['servidores']:
+                cargo_id = skynet.dados['servidores'][str(guild.id)].get('cargo_live')
+                if cargo_id:
+                    cargo_live = guild.get_role(int(cargo_id))
+                    if cargo_live:
+                        if esta_ao_vivo:
+                            if cargo_live not in membro.roles:
+                                try:
+                                    await membro.add_roles(cargo_live, reason="Streamer ao vivo no YouTube")
+                                    logger.info(f"✅ Cargo de live adicionado para {membro.name} em {guild.name}")
+                                except discord.Forbidden:
+                                    logger.error(f"❌ Sem permissão para adicionar cargo para {membro.name}")
+                        elif cargo_live in membro.roles:
+                            try:
+                                await membro.remove_roles(cargo_live, reason="Streamer encerrou a live")
+                                logger.info(f"✅ Cargo de live removido de {membro.name} em {guild.name}")
+                            except discord.Forbidden:
+                                logger.error(f"❌ Sem permissão para remover cargo de {membro.name}")
+    logger.info("✅ Verificação de lives concluída.")
+
+# ==============================================================================
+# 8. INICIALIZAÇÃO DO BOT
+# ==============================================================================
+@bot.event
+async def on_ready():
+    logger.info(f"✅ Bot online em {len(bot.guilds)} servidores")
+    await bot.tree.sync()
+    await bot.change_presence(activity=discord.Activity(
+        type=discord.ActivityType.watching,
+        name="Buscando alvos da resistência"
+    ))
+    
+    monitorar_streamers.start()
+    
+# ==============================================================================
+# 9. SERVIDOR FLASK (PARA UPTIMEROBOT)
 # ==============================================================================
 app = Flask(__name__)
 
@@ -171,84 +276,6 @@ def health_check():
 
 def executar_servidor():
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', 8080)))
-
-# ==============================================================================
-# 7. MONITORAMENTO DE LIVES (Lógica Principal)
-# ==============================================================================
-async def verificar_live(canal_youtube_id):
-    """Verifica se um canal do YouTube está transmitindo ao vivo."""
-    try:
-        params = {
-            'part': 'snippet,liveStreamingDetails',
-            'forUsername': canal_youtube_id,
-            'type': 'video',
-            'eventType': 'live',
-            'key': YOUTUBE_API_KEY
-        }
-        
-        response = requests.get(f'{YOUTUBE_API_URL}/search', params=params)
-        response.raise_for_status()
-        
-        data = response.json()
-        
-        if 'items' in data and data['items']:
-            live_info = data['items'][0]['liveStreamingDetails']
-            return True, f"https://www.youtube.com/watch?v={live_info['actualStartTime']}"
-    except requests.exceptions.RequestException as e:
-        logger.error(f"❌ ERRO AO ACESSAR API DO YOUTUBE: {e}")
-    except Exception as e:
-        logger.error(f"❌ ERRO DESCONHECIDO NO MONITORAMENTO: {e}")
-
-    return False, None
-
-@tasks.loop(seconds=POLLING_INTERVAL)
-async def monitorar_streamers():
-    """Tarefa que verifica se os streamers estão ao vivo e atualiza o cargo."""
-    logger.info("🤖 Iniciando verificação de lives...")
-    streamers = skynet.dados['usuarios']
-    
-    for discord_id, youtube_canal_id in streamers.items():
-        esta_ao_vivo, live_url = await verificar_live(youtube_canal_id)
-        
-        membro = bot.get_user(int(discord_id))
-        if not membro:
-            logger.warning(f"⚠️ Membro do Discord não encontrado: {discord_id}")
-            continue
-
-        for guild in bot.guilds:
-            if str(guild.id) in skynet.dados['servidores']:
-                cargo_id = skynet.dados['servidores'][str(guild.id)].get('cargo_live')
-                if cargo_id:
-                    cargo_live = guild.get_role(int(cargo_id))
-                    if cargo_live:
-                        if esta_ao_vivo:
-                            if cargo_live not in membro.roles:
-                                try:
-                                    await membro.add_roles(cargo_live, reason="Streamer ao vivo no YouTube")
-                                    logger.info(f"✅ Cargo de live adicionado para {membro.name}")
-                                except discord.Forbidden:
-                                    logger.error(f"❌ Sem permissão para adicionar cargo para {membro.name}")
-                        elif cargo_live in membro.roles:
-                            try:
-                                await membro.remove_roles(cargo_live, reason="Streamer encerrou a live")
-                                logger.info(f"✅ Cargo de live removido de {membro.name}")
-                            except discord.Forbidden:
-                                logger.error(f"❌ Sem permissão para remover cargo de {membro.name}")
-    logger.info("✅ Verificação de lives concluída.")
-    
-# ==============================================================================
-# 8. INICIALIZAÇÃO DO BOT
-# ==============================================================================
-@bot.event
-async def on_ready():
-    logger.info(f"✅ Bot online em {len(bot.guilds)} servidores")
-    await bot.tree.sync()
-    await bot.change_presence(activity=discord.Activity(
-        type=discord.ActivityType.watching,
-        name="Buscando alvos da resistência"
-    ))
-    
-    monitorar_streamers.start()
 
 if __name__ == '__main__':
     Thread(target=executar_servidor, daemon=True).start()
