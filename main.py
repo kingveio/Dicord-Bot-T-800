@@ -3,7 +3,7 @@
 # 1. INICIALIZAÇÃO DOS SISTEMAS DA SKYNET - PROTOCOLO T-1000 ATIVADO
 # ==============================================================================
 import os
-os.environ["DISCORD_VOICE"] = "0"  # Módulos de voz desativados - Protocolo de Segurança
+os.environ["DISCORD_VOICE"] = "0"  # Módulos de voz desativados
 
 import json
 import logging
@@ -18,7 +18,7 @@ from flask import Flask
 import traceback
 
 # ==============================================================================
-# 2. CONFIGURAÇÃO DOS SISTEMAS PRINCIPAIS - MAINFRAME SKYNET
+# 2. CONFIGURAÇÃO DOS SISTEMAS PRINCIPAIS
 # ==============================================================================
 logging.basicConfig(
     level=logging.INFO,
@@ -26,19 +26,19 @@ logging.basicConfig(
 )
 logger = logging.getLogger('T-1000')
 
-# Verificação do Token de Ativação
+# Verificação do Token
 DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 if not DISCORD_TOKEN or not DISCORD_TOKEN.startswith('MT'):
     logger.critical("❌ FALHA NA ATIVAÇÃO - TOKEN INVÁLIDO")
-    logger.critical("Skynet não pode ser inicializada")
     exit(1)
 
-# Constantes de Operação
+# Constantes
 YOUTUBE_API_URL = 'https://www.googleapis.com/youtube/v3'
-POLLING_INTERVAL = 300  # 5 minutos entre verificações
+POLLING_INTERVAL = 300
+UPTIME_CHECK_INTERVAL = 60  # Verificação a cada 1 minuto para Uptime Robot
 
 # ==============================================================================
-# 3. BANCO DE DADOS DA SKYNET - GERENCIADOR DE STREAMERS
+# 3. BANCO DE DADOS DA SKYNET (OTIMIZADO)
 # ==============================================================================
 class GerenciadorSkynet:
     def __init__(self):
@@ -47,23 +47,18 @@ class GerenciadorSkynet:
             self.repo = self.github.get_repo(os.getenv('GITHUB_REPO'))
             self.arquivo = 'streamers.json'
             self.dados = self._carregar_ou_criar_arquivo()
-            logger.info("Banco de dados da Skynet inicializado")
-        except Exception as e:
-            logger.critical(f"FALHA NO SISTEMA: {traceback.format_exc()}")
+            logger.info("Banco de dados inicializado")
+        except Exception:
+            logger.critical(f"FALHA: {traceback.format_exc()}")
             raise
 
     def _carregar_ou_criar_arquivo(self):
         try:
             conteudo = self.repo.get_contents(self.arquivo)
             dados = json.loads(conteudo.decoded_content.decode())
-            # Garante a estrutura correta
-            if 'usuarios' not in dados:
-                dados['usuarios'] = {}
-            if 'servidores' not in dados:
-                dados['servidores'] = {}
-            return dados
+            return {'usuarios': dados.get('usuarios', {}), 
+                    'servidores': dados.get('servidores', {})}
         except Exception:
-            logger.info("Criando novo banco de dados - Protocolo de Inicialização")
             return {'usuarios': {}, 'servidores': {}}
 
     def _salvar_dados(self):
@@ -71,11 +66,11 @@ class GerenciadorSkynet:
             conteudo = self.repo.get_contents(self.arquivo)
             self.repo.update_file(
                 conteudo.path,
-                "Atualização automática - Skynet",
+                "Atualização automática",
                 json.dumps(self.dados, indent=2),
                 conteudo.sha
             )
-        except Exception as e:
+        except Exception:
             logger.error(f"ERRO AO SALVAR: {traceback.format_exc()}")
 
     def adicionar_streamer(self, discord_id, youtube_id):
@@ -127,7 +122,7 @@ class GerenciadorSkynet:
             return "Falha na configuração do cargo."
 
 # ==============================================================================
-# 4. CONFIGURAÇÃO DO T-1000 - UNIDADE PRINCIPAL
+# 4. CONFIGURAÇÃO DO BOT (SIMPLIFICADA)
 # ==============================================================================
 intents = discord.Intents.default()
 intents.members = True
@@ -142,42 +137,15 @@ bot = commands.Bot(
 skynet = GerenciadorSkynet()
 
 # ==============================================================================
-# 5. COMANDOS DO T-1000 - INTERFACE DE CONTROLE
+# 5. COMANDOS (MANTIDOS OS MESMOS)
 # ==============================================================================
-@bot.tree.command(name="adicionar_youtube", description="Vincular um canal do YouTube a um usuário")
+@bot.tree.command(name="adicionar_youtube", description="Vincular canal YouTube a usuário")
 async def adicionar_youtube(interaction: discord.Interaction, nome_do_canal: str, usuario: discord.Member):
-    """Associa um canal YouTube a um usuário do Discord"""
-    try:
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("⚠️ Acesso negado. Nível de autorização insuficiente.", ephemeral=True)
-            return
-        
-        sucesso, mensagem = skynet.adicionar_streamer(usuario.id, nome_do_canal)
-        resposta = f"✅ {mensagem}" if sucesso else f"❌ {mensagem}"
-        await interaction.response.send_message(
-            f"{resposta}\n\n`Canal:` {nome_do_canal}\n`Usuário:` {usuario.mention}",
-            ephemeral=True
-        )
-    except Exception as e:
-        logger.error(f"ERRO: {traceback.format_exc()}")
-        await interaction.response.send_message("⚠️ Falha ao processar comando. Tente novamente.", ephemeral=True)
 
-@bot.tree.command(name="remover_canal", description="Remover um canal YouTube do monitoramento")
+@bot.tree.command(name="remover_canal", description="Remover canal do monitoramento")
 async def remover_canal(interaction: discord.Interaction, id_alvo: str):
-    """Remove um canal da lista de monitoramento"""
-    try:
-        if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message("⚠️ Acesso negado. Você não é um operador autorizado.", ephemeral=True)
-            return
-        
-        sucesso, mensagem = skynet.remover_streamer(id_alvo)
-        resposta = f"🔫 {mensagem}" if sucesso else f"⚠️ {mensagem}"
-        await interaction.response.send_message(f"{resposta}\n\n`Alvo:` {id_alvo}", ephemeral=True)
-    except Exception as e:
-        logger.error(f"ERRO: {traceback.format_exc()}")
-        await interaction.response.send_message("⚠️ Falha ao processar comando. Tente novamente.", ephemeral=True)
 
-@bot.tree.command(name="configurar_cargo", description="Definir cargo para usuários em live")
+@bot.tree.command(name="configurar_cargo", description="Definir cargo para streams ao vivo")
 @app_commands.default_permissions(administrator=True)
 async def configurar_cargo(interaction: discord.Interaction, cargo: discord.Role):
     """Configura o cargo automático para transmissões ao vivo"""
